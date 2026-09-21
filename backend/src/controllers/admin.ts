@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
+import { sendOrderStatusEmail } from '../utils/notifications';
 
 export const getUsers = async (req: Request, res: Response) => {
   const users = await prisma.user.findMany({ select: { id: true, name: true, email: true, role: true, createdAt: true } });
@@ -50,5 +51,60 @@ export const sendCampaign = async (req: Request, res: Response) => {
   // In reality, this would send an email. We just log it to DB.
   const campaign = await prisma.campaign.create({ data: req.body });
   res.json(campaign);
+};
+
+import bcrypt from 'bcryptjs';
+export const createUser = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { name, email, password, role } = req.body;
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return res.status(400).json({ message: 'User exists' });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: { name, email, passwordHash: hashedPassword, role },
+      select: { id: true, name: true, email: true, role: true }
+    });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const getOrders = async (req: Request, res: Response) => {
+  try {
+    const orders = await prisma.order.findMany({
+      include: {
+        user: { select: { name: true, email: true } },
+        items: { include: { product: true } },
+        address: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error fetching orders' });
+  }
+};
+
+export const updateOrderStatus = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const order = await prisma.order.update({
+      where: { id: String(id) },
+      data: { status },
+      include: { user: true }
+    });
+
+    if (order.user?.email) {
+      await sendOrderStatusEmail(order.user.email, order.id, status);
+    }
+
+    res.json(order);
+  } catch (error) {
+    console.error('Error updating order status:', error);
+    res.status(500).json({ message: 'Server error updating order' });
+  }
 };
 

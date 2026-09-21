@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { CheckCircle2, CreditCard, ShieldCheck } from 'lucide-react';
+import api from '@/lib/axios';
 
 export default function CheckoutPage() {
   const { items, getTotalPrice } = useCartStore();
@@ -25,7 +26,9 @@ export default function CheckoutPage() {
     }
   }, [isMounted, user, router]);
 
-  if (!isMounted || !user) return <div className="bg-[#f8f9fa] min-h-screen py-8 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
+  if (!isMounted) {
+    return null; // or a loading spinner
+  }
 
   const subtotal = getTotalPrice();
   const shipping = subtotal > 99 ? 0 : 10;
@@ -35,18 +38,49 @@ export default function CheckoutPage() {
 
   if (items.length === 0) {
     return (
-      <div className="bg-[#f8f9fa] min-h-[70vh] flex flex-col items-center justify-center font-sans">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">Your cart is empty</h2>
-        <Link href="/products" className="bg-blue-600 text-white px-6 py-3 rounded-md font-medium">Return to Shop</Link>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center font-sans text-center px-4">
+        <h1 className="text-2xl font-bold text-gray-900 mb-4">Your cart is empty</h1>
+        <p className="text-gray-500 mb-8">Add items to your cart to checkout.</p>
+        <Link href="/products" className="bg-[#2874f0] text-white px-8 py-3 rounded-md font-bold shadow-sm hover:bg-blue-600">
+          Continue Shopping
+        </Link>
       </div>
     );
   }
 
-  const handlePlaceOrder = () => {
-    const orderId = 'ORD' + Math.floor(Math.random() * 1000000);
-    // Normally we would save order to backend here and clear cart
-    // useCartStore.getState().clearCart(); // Assuming a clearCart method exists, or just route to confirmation
-    router.push(`/order-confirmation/${orderId}`);
+  const handlePlaceOrder = async () => {
+    try {
+      if (!formData.address || !formData.city) {
+        alert('Please fill out the shipping address completely');
+        return;
+      }
+      
+      // Create Address First
+      const addressRes = await api.post('/addresses', {
+        name: formData.fullName,
+        phone: formData.phone,
+        type: 'HOME',
+        line1: formData.address,
+        city: formData.city,
+        state: formData.state,
+        postalCode: formData.pincode,
+        country: formData.country,
+        isDefault: true
+      }, { headers: { 'x-user-id': user?.id } });
+
+      const payload = {
+        items: items.map(i => ({ productId: i.id, quantity: i.quantity, price: i.price })),
+        totalAmount: getTotalPrice(),
+        shippingAddressId: addressRes.data.id,
+        paymentId: `PAY-${Date.now()}`
+      };
+
+      const res = await api.post('/orders', payload);
+      useCartStore.getState().clearCart();
+      router.push(`/order-confirmation/${res.data.id}`);
+    } catch (error) {
+      alert('Failed to place order. Please try again.');
+    }
   };
 
   return (

@@ -27,7 +27,8 @@ export default function ProductDetailsPage() {
   const addItem = useCartStore((state) => state.addItem);
   const addToWishlist = useWishlistStore((state) => state.addItem);
   const removeFromWishlist = useWishlistStore((state) => state.removeItem);
-  const isInWishlist = useWishlistStore((state) => state.isInWishlist);
+  const wishlistItems = useWishlistStore((state) => state.items);
+  const isInWishlist = (id: string) => wishlistItems.some(i => i.id === id);
   
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);

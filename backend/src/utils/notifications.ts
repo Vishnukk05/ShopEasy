@@ -1,0 +1,142 @@
+import nodemailer from 'nodemailer';
+import twilio from 'twilio';
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.SMTP_EMAIL,
+    pass: process.env.SMTP_PASSWORD,
+  },
+});
+
+let twilioClient: any = null;
+if (process.env.TWILIO_ACCOUNT_SID?.startsWith('AC') && process.env.TWILIO_AUTH_TOKEN) {
+  twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+}
+
+export const sendEmailOTP = async (email: string, otp: string) => {
+  try {
+    if (!process.env.SMTP_EMAIL || !process.env.SMTP_PASSWORD) {
+      console.log(`[EMAIL SIMULATION] Sent to: ${email} - OTP: ${otp}`);
+      return true;
+    }
+
+    const info = await transporter.sendMail({
+      from: `"ShopEasy" <${process.env.SMTP_EMAIL}>`,
+      to: email,
+      subject: `ShopEasy – Your one-time verification code: ${otp}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; line-height: 1.6;">
+          <p>Hi Customer,</p>
+          <p>Thank you for choosing ShopEasy.</p>
+          <p>Use the following One-Time Password (OTP) to complete your verification process. This code is valid for the next 10 minutes.</p>
+          
+          <h2 style="font-size: 28px; letter-spacing: 4px; padding: 15px; background: #f9f9f9; text-align: center; border-radius: 6px; border: 1px solid #e5e5e5; display: inline-block; margin: 10px 0;">
+            ${otp.substring(0, 3)} ${otp.substring(3)}
+          </h2>
+          
+          <p><strong>Important Security Notice:</strong><br>
+          For your security, never share this code with anyone. Employees of ShopEasy will never ask you for this password over the phone, email, or via text message.</p>
+          
+          <p>If you did not request this code, please ignore this email or change your account security settings immediately.</p>
+          
+          <p>Best regards,<br>
+          The ShopEasy Security Team<br>
+          <a href="http://localhost:3000" style="color: #0d6efd;">ShopEasy Website</a></p>
+        </div>
+      `
+    });
+    console.log(`Real email sent to ${email}. MessageId: ${info.messageId}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return false;
+  }
+};
+
+export const sendOrderStatusEmail = async (email: string, orderId: string, status: string) => {
+  try {
+    if (!process.env.SMTP_EMAIL || !process.env.SMTP_PASSWORD) {
+      console.log(`[EMAIL SIMULATION] To: ${email} - Order ${orderId} is now ${status}`);
+      return true;
+    }
+
+    await transporter.sendMail({
+      from: `"ShopEasy" <${process.env.SMTP_EMAIL}>`,
+      to: email,
+      subject: `ShopEasy Order Update: ${status}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+          <h2 style="color: #2874f0;">Order Update</h2>
+          <p>Your order <strong>#${orderId}</strong> status has been updated to:</p>
+          <h2 style="color: #333;">${status.replace(/_/g, ' ')}</h2>
+          <p style="color: #666; font-size: 14px;">Thank you for shopping with ShopEasy!</p>
+        </div>
+      `
+    });
+    return true;
+  } catch (error) {
+    console.error('Error sending order email:', error);
+    return false;
+  }
+};
+
+export const sendSmsOTP = async (phone: string, otp: string) => {
+  if (!twilioClient) {
+    console.log('=============================================');
+    console.log(`[SMS SIMULATION] Sent to: ${phone}`);
+    console.log(`[SMS SIMULATION] Message: Your ShopEasy verification code is: ${otp}. It expires in 10 minutes.`);
+    console.log('=============================================');
+    return true;
+  }
+
+  try {
+    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+    await twilioClient.messages.create({
+      body: `Your verification code is ${otp}. It expires in 5 minutes. Do not share it.`,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: formattedPhone
+    });
+    console.log(`Real SMS sent to ${phone}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending SMS via Twilio:', error);
+    return false;
+  }
+};
+
+export const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+export const sendResetPasswordEmail = async (email: string, resetLink: string) => {
+  try {
+    if (!process.env.SMTP_EMAIL || !process.env.SMTP_PASSWORD) {
+      console.log(`[EMAIL SIMULATION] Reset Link to: ${email} - Link: ${resetLink}`);
+      return true;
+    }
+
+    const info = await transporter.sendMail({
+      from: `"ShopEasy" <${process.env.SMTP_EMAIL}>`,
+      to: email,
+      subject: `ShopEasy - Reset Your Password`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; line-height: 1.6;">
+          <p>Hi Customer,</p>
+          <p>You recently requested to reset your password for your ShopEasy account.</p>
+          <p>Click the link below to reset it:</p>
+          <p style="text-align: center; margin: 30px 0;">
+            <a href="${resetLink}" style="background-color: #2874f0; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Reset Password</a>
+          </p>
+          <p>If you did not request a password reset, please ignore this email or contact support if you have questions.</p>
+          <p>Best regards,<br>The ShopEasy Security Team</p>
+        </div>
+      `
+    });
+    console.log(`Real reset email sent to ${email}. MessageId: ${info.messageId}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending reset email:', error);
+    return false;
+  }
+};

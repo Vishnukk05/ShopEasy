@@ -1,5 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import api from '@/lib/axios';
 import { useAuthStore } from '@/store/useAuthStore';
 import { LayoutDashboard, Package, ShoppingCart, Users, Settings, Plus, Edit, Trash2, Search, X, Folder, Image as ImageIcon, MessageSquare, Send, CheckCircle, Power } from 'lucide-react';
@@ -46,9 +49,16 @@ export default function AdminPage() {
   const [isBannerFormOpen, setIsBannerFormOpen] = useState(false);
   const [bannerFormData, setBannerFormData] = useState({ title: '', imageUrl: '' });
 
+  // User Form
+  const [isUserFormOpen, setIsUserFormOpen] = useState(false);
+  const [userFormData, setUserFormData] = useState({ name: '', email: '', password: '', role: 'CUSTOMER' });
+
   // Campaign Form
   const [isCampaignFormOpen, setIsCampaignFormOpen] = useState(false);
   const [campaignFormData, setCampaignFormData] = useState({ subject: '', message: '' });
+
+  // Orders State
+  const [orders, setOrders] = useState<any[]>([]);
 
   const fetchData = () => {
     api.get('/products').then(res => setProducts(res.data)).catch(() => {});
@@ -57,18 +67,92 @@ export default function AdminPage() {
     api.get('/admin/banners').then(res => setBanners(res.data)).catch(() => {});
     api.get('/admin/tickets').then(res => setTickets(res.data)).catch(() => {});
     api.get('/admin/campaigns').then(res => setCampaigns(res.data)).catch(() => {});
+    api.get('/admin/orders').then(res => setOrders(res.data)).catch(() => {});
   };
 
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
-    if (user && user.role === 'ADMIN') {
+    if (user && (user.role === 'ADMIN' || user.role === 'STAFF')) {
       fetchData();
     }
   }, [user]);
 
   // --- Handlers ---
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExportProducts = async () => {
+    if (products.length === 0) return showToast('No products to export', 'error');
+    
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Products');
+    
+    worksheet.columns = [
+      { header: 'name', key: 'name', width: 30 },
+      { header: 'description', key: 'description', width: 40 },
+      { header: 'price', key: 'price', width: 15 },
+      { header: 'originalPrice', key: 'originalPrice', width: 15 },
+      { header: 'stockQuantity', key: 'stockQuantity', width: 15 },
+      { header: 'categoryName', key: 'categoryName', width: 25 },
+      { header: 'images', key: 'images', width: 40 },
+      { header: 'rating', key: 'rating', width: 10 }
+    ];
+
+    products.forEach(p => {
+      worksheet.addRow({
+        name: p.name,
+        description: p.description || '',
+        price: p.price,
+        originalPrice: p.originalPrice || '',
+        stockQuantity: p.stockQuantity,
+        categoryName: p.category?.name || '',
+        images: p.images ? p.images.join(', ') : '',
+        rating: p.rating || 0
+      });
+    });
+
+    const categoryNames = categories.map(c => c.name);
+    const formulaStr = `"${categoryNames.join(',')}"`;
+
+    for (let i = 2; i <= 1000; i++) {
+      worksheet.getCell(`F${i}`).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [formulaStr]
+      };
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), 'products_export.xlsx');
+  };
+
+  const handleImportProducts = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const workbook = XLSX.read(bstr, { type: 'binary' });
+        const wsname = workbook.SheetNames[0];
+        const ws = workbook.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        
+        if (data.length === 0) return showToast('Excel file is empty', 'error');
+
+        const res = await api.post('/products/bulk', data);
+        showToast(res.data.message || 'Products imported successfully', 'success');
+        fetchData(); // refresh table
+      } catch (err: any) {
+        showToast(err.response?.data?.message || err.message || 'Failed to import products', 'error');
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -149,6 +233,29 @@ export default function AdminPage() {
     });
   };
 
+  const handleUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/admin/users', userFormData);
+      showToast('User created successfully!', 'success');
+      setIsUserFormOpen(false);
+      setUserFormData({ name: '', email: '', password: '', role: 'CUSTOMER' });
+      fetchData();
+    } catch (err: any) {
+      showToast(err.response?.data?.message || 'Failed to create user', 'error');
+    }
+  };
+
+  const handleUpdateOrderStatus = async (id: string, status: string) => {
+    try {
+      await api.put(`/admin/orders/${id}/status`, { status });
+      showToast('Order status updated!', 'success');
+      fetchData();
+    } catch (err) {
+      showToast('Failed to update status', 'error');
+    }
+  };
+
   const handleDeleteUser = async (id: string) => {
     setConfirmDialog({
       message: 'Are you sure you want to delete this user?',
@@ -212,12 +319,12 @@ export default function AdminPage() {
 
   if (!isMounted) return null;
 
-  if (!user || user.role !== 'ADMIN') {
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'STAFF')) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-100 max-w-md w-full text-center">
            <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-           <p className="text-gray-600">You must be an Admin to view this dashboard.</p>
+           <p className="text-gray-600">You must be an Admin or Staff to view this dashboard.</p>
         </div>
       </div>
     );
@@ -257,11 +364,12 @@ export default function AdminPage() {
         <nav 
           className="flex-1 py-4 overflow-y-auto [&::-webkit-scrollbar]:hidden"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {[
-            { id: 'dashboard', icon: <LayoutDashboard size={20}/>, label: 'Dashboard' },
-            { id: 'products', icon: <Package size={20}/>, label: 'Products' },
-            { id: 'categories', icon: <Folder size={20}/>, label: 'Categories' },
+          >
+            {[
+              { id: 'dashboard', icon: <LayoutDashboard size={20}/>, label: 'Dashboard' },
+              { id: 'orders', icon: <ShoppingCart size={20}/>, label: 'Orders' },
+              { id: 'products', icon: <Package size={20}/>, label: 'Products' },
+              { id: 'categories', icon: <Folder size={20}/>, label: 'Categories' },
             { id: 'users', icon: <Users size={20}/>, label: 'Customers' },
             { id: 'banners', icon: <ImageIcon size={20}/>, label: 'Offers / Banners' },
             { id: 'tickets', icon: <MessageSquare size={20}/>, label: 'Support Tickets' },
@@ -315,14 +423,84 @@ export default function AdminPage() {
             </div>
           )}
 
+          {/* ORDERS MODULE */}
+          {activeMenu === 'orders' && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-semibold text-gray-800">Order Management</h2>
+              <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
+                <table className="w-full text-left text-sm divide-y">
+                  <thead>
+                    <tr className="bg-gray-50 text-xs uppercase text-gray-500 font-semibold">
+                      <th className="p-4">Order ID</th>
+                      <th className="p-4">Customer</th>
+                      <th className="p-4">Date</th>
+                      <th className="p-4">Items</th>
+                      <th className="p-4">Total</th>
+                      <th className="p-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {orders.map(order => (
+                      <tr key={order.id} className="hover:bg-gray-50">
+                        <td className="p-4 font-mono text-xs">{order.id.slice(0, 8)}...</td>
+                        <td className="p-4">
+                          <div className="font-medium">{order.user?.name}</div>
+                          <div className="text-gray-500 text-xs">{order.user?.email}</div>
+                        </td>
+                        <td className="p-4">{new Date(order.createdAt).toLocaleDateString()}</td>
+                        <td className="p-4">{order.items?.length || 0} items</td>
+                        <td className="p-4 font-medium">${order.totalAmount}</td>
+                        <td className="p-4">
+                          <select
+                            value={order.status}
+                            onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value)}
+                            className={`border rounded-md px-2 py-1 text-xs font-semibold
+                              ${order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                                order.status === 'SHIPPED' ? 'bg-blue-100 text-blue-800' :
+                                order.status === 'OUT_FOR_DELIVERY' ? 'bg-orange-100 text-orange-800' :
+                                order.status === 'DELIVERED' ? 'bg-green-100 text-green-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}
+                          >
+                            <option value="PENDING">PENDING</option>
+                            <option value="PAID">PAID</option>
+                            <option value="SHIPPED">SHIPPED</option>
+                            <option value="OUT_FOR_DELIVERY">OUT FOR DELIVERY</option>
+                            <option value="DELIVERED">DELIVERED</option>
+                            <option value="CANCELLED">CANCELLED</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* PRODUCTS MODULE */}
           {activeMenu === 'products' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold text-gray-800">All Products</h2>
-                <button onClick={() => { setEditingId(null); setFormData({ name: '', description: '', price: '', originalPrice: '', rating: '', stockQuantity: '', categoryId: '', images: '' }); setIsFormOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-                  <Plus size={16} /> Add New Product
-                </button>
+                <div className="flex gap-2">
+                  <input 
+                    type="file" 
+                    accept=".xlsx, .xls" 
+                    className="hidden" 
+                    ref={fileInputRef} 
+                    onChange={handleImportProducts} 
+                  />
+                  <button onClick={() => fileInputRef.current?.click()} className="bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-300 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                    Import Excel
+                  </button>
+                  <button onClick={handleExportProducts} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                    Export Excel
+                  </button>
+                  <button onClick={() => { setEditingId(null); setFormData({ name: '', description: '', price: '', originalPrice: '', rating: '', stockQuantity: '', categoryId: '', images: '' }); setIsFormOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                    <Plus size={16} /> Add New Product
+                  </button>
+                </div>
               </div>
 
               {isFormOpen && (
@@ -426,11 +604,49 @@ export default function AdminPage() {
           {/* USERS MODULE */}
           {activeMenu === 'users' && (
             <div className="space-y-6">
-              <h2 className="text-lg font-semibold text-gray-800">All Customers</h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-800">System Users</h2>
+                <button onClick={() => setIsUserFormOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                  <Plus size={16} /> Add New User
+                </button>
+              </div>
+
+              {isUserFormOpen && (
+                <div className="bg-white border border-gray-200 p-6 rounded-xl shadow-sm mb-6 relative">
+                  <button onClick={() => setIsUserFormOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 p-2"><X size={20} /></button>
+                  <h3 className="text-lg font-bold mb-4 text-gray-900">Add New User</h3>
+                  <form onSubmit={handleUserSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                      <input type="text" required value={userFormData.name} onChange={e => setUserFormData({...userFormData, name: e.target.value})} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                      <input type="email" required value={userFormData.email} onChange={e => setUserFormData({...userFormData, email: e.target.value})} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                      <input type="password" required value={userFormData.password} onChange={e => setUserFormData({...userFormData, password: e.target.value})} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                      <select required value={userFormData.role} onChange={e => setUserFormData({...userFormData, role: e.target.value})} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                        <option value="CUSTOMER">Customer</option>
+                        <option value="STAFF">Staff</option>
+                        <option value="ADMIN">Admin</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <button type="submit" className="bg-gray-900 text-white px-6 py-2 rounded-lg text-sm font-medium">Create User</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
               <div className="bg-white border rounded-xl overflow-hidden">
                 <table className="w-full text-left text-sm divide-y">
                   <thead><tr className="bg-gray-50 text-xs uppercase text-gray-500"><th className="p-4">Name</th><th className="p-4">Email</th><th className="p-4">Role</th><th className="p-4 text-right">Actions</th></tr></thead>
-                  <tbody className="divide-y">{usersList.map(u => <tr key={u.id} className="hover:bg-gray-50"><td className="p-4 font-medium">{u.name}</td><td className="p-4">{u.email}</td><td className="p-4"><span className="px-2 py-1 bg-gray-100 rounded-md text-xs">{u.role}</span></td><td className="p-4 text-right">{u.role !== 'ADMIN' && <button onClick={() => handleDeleteUser(u.id)} className="text-red-500"><Trash2 size={16}/></button>}</td></tr>)}</tbody>
+                  <tbody className="divide-y">{usersList.map(u => <tr key={u.id} className="hover:bg-gray-50"><td className="p-4 font-medium">{u.name}</td><td className="p-4">{u.email}</td><td className="p-4"><span className={`px-2 py-1 rounded-md text-xs font-semibold ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : u.role === 'STAFF' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{u.role}</span></td><td className="p-4 text-right">{u.role !== 'ADMIN' && <button onClick={() => handleDeleteUser(u.id)} className="text-red-500"><Trash2 size={16}/></button>}</td></tr>)}</tbody>
                 </table>
               </div>
             </div>

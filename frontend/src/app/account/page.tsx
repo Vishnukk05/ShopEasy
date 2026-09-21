@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/axios';
 
-function AddressManager() {
+function AddressManager({ showToast }: { showToast: (msg: string, type: string) => void }) {
   const { user, token } = useAuthStore();
   const [addresses, setAddresses] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -41,8 +41,9 @@ function AddressManager() {
       setEditingId(null);
       setForm({ name: '', phone: '', type: 'HOME', line1: '', line2: '', city: '', state: '', postalCode: '', country: 'India' });
       fetchAddresses();
+      showToast('Address saved successfully!', 'success');
     } catch (err) {
-      alert('Error saving address');
+      showToast('Error saving address', 'error');
     }
   };
 
@@ -51,8 +52,9 @@ function AddressManager() {
     try {
       await api.delete(`/addresses/${id}`);
       fetchAddresses();
+      showToast('Address deleted', 'success');
     } catch (err) {
-      alert('Error deleting address');
+      showToast('Error deleting address', 'error');
     }
   };
 
@@ -144,6 +146,18 @@ function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  useEffect(() => {
+    if (user && (user.role === 'ADMIN' || user.role === 'STAFF')) {
+      router.push('/admin');
+    }
+  }, [user, router]);
+
   const [activeTab, setActiveTab] = useState<'profile' | 'addresses' | 'password' | 'orders' | 'cards' | 'reviews'>(
     (searchParams.get('tab') as any) || 'profile'
   );
@@ -202,63 +216,118 @@ function ProfilePageContent() {
     setIsClient(true);
   }, []);
 
-  const handleProfileSave = () => {
-    if (user && token) {
-      setAuth({
-        ...user,
-        name: `${profileForm.firstName} ${profileForm.lastName}`.trim()
-      }, token);
-    }
-    setIsEditingProfile(false);
-  };
-
-  const handleContactSave = (field: 'email' | 'mobile') => {
-    if (field === 'email') {
-      setEmail(tempEmail);
+  const handleProfileSave = async () => {
+    try {
+      const newName = `${profileForm.firstName} ${profileForm.lastName}`.trim();
+      const res = await api.put('/auth/profile', { name: newName });
+      
       if (user && token) {
         setAuth({
           ...user,
-          email: tempEmail
+          ...res.data.user
         }, token);
       }
+      setIsEditingProfile(false);
+    } catch (error) {
+      alert('Failed to update profile');
     }
-    if (field === 'mobile') setMobile(tempMobile);
-    setEditingContact(null);
+  };
+
+  const [verifyingContact, setVerifyingContact] = useState<'email' | 'mobile' | null>(null);
+  const [verificationOtp, setVerificationOtp] = useState('');
+
+  const handleRequestVerification = async (type: 'email' | 'phone') => {
+    try {
+      await api.post('/auth/request-verification', { contactType: type });
+      setVerifyingContact(type === 'email' ? 'email' : 'mobile');
+      showToast(`OTP sent to your ${type}`, 'success');
+    } catch (err) {
+      showToast('Failed to send verification code', 'error');
+    }
+  };
+
+  const handleVerifyContact = async () => {
+    if (!verifyingContact) return;
+    try {
+      const type = verifyingContact === 'email' ? 'email' : 'phone';
+      const res = await api.post('/auth/verify-contact', { contactType: type, otp: verificationOtp });
+      if (user && token) {
+        setAuth({ ...user, ...res.data.user }, token);
+      }
+      setVerifyingContact(null);
+      setVerificationOtp('');
+      showToast('Contact verified successfully!', 'success');
+    } catch (err) {
+      showToast('Invalid OTP', 'error');
+    }
+  };
+
+  const handleContactSave = async (field: 'email' | 'mobile') => {
+    try {
+      const payload = field === 'email' ? { email: tempEmail } : { phone: tempMobile };
+      const res = await api.put('/auth/profile', payload);
+      const updatedUser = res.data.user;
+
+      if (field === 'email') setEmail(tempEmail);
+      if (field === 'mobile') setMobile(tempMobile);
+      
+      if (user && token) {
+        setAuth({
+          ...user,
+          ...updatedUser
+        }, token);
+      }
+      setEditingContact(null);
+      showToast('Profile updated! You can now verify it.', 'success');
+    } catch (error) {
+      showToast('Failed to update contact', 'error');
+    }
   };
 
   const handlePasswordSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (passwords.new !== passwords.confirm) {
-      alert("Passwords do not match!");
+      showToast("Passwords do not match!", 'error');
       return;
     }
-    alert("Password changed successfully!");
+    showToast("Password changed successfully!", 'success');
     setPasswords({ old: '', new: '', confirm: '' });
   };
+
+  const [orders, setOrders] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (user) {
+      api.get('/orders').then(res => setOrders(res.data)).catch(() => {});
+    }
+  }, [user]);
 
   if (!isClient) {
     return null;
   }
 
-  const orders = [
-    { id: '#ORD001', date: '12 Sep 2026', status: 'Delivered', total: '$129.99' },
-    { id: '#ORD002', date: '26 Aug 2026', status: 'Processing', total: '$24.99' },
-    { id: '#ORD003', date: '15 Aug 2026', status: 'Cancelled', total: '$14.99' },
-    { id: '#ORD004', date: '01 Aug 2026', status: 'Delivered', total: '$49.99' },
-  ];
-
   const getStatusStyle = (status: string) => {
     switch(status) {
-      case 'Delivered': return 'bg-green-100 text-green-700';
-      case 'Processing': return 'bg-blue-100 text-blue-700';
-      case 'Cancelled': return 'bg-red-100 text-red-700';
-      case 'Shipped': return 'bg-yellow-100 text-yellow-700';
+      case 'DELIVERED': return 'bg-green-100 text-green-700';
+      case 'PENDING': return 'bg-yellow-100 text-yellow-700';
+      case 'PAID': return 'bg-blue-100 text-blue-700';
+      case 'CANCELLED': return 'bg-red-100 text-red-700';
+      case 'SHIPPED': return 'bg-blue-100 text-blue-700';
+      case 'OUT_FOR_DELIVERY': return 'bg-orange-100 text-orange-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
 
   return (
     <div className="bg-[#f1f3f6] min-h-screen py-8 font-sans">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[60] px-6 py-3 rounded-lg shadow-lg font-medium text-white 
+${toast.type === 'error' ? 'bg-red-600' : toast.type === 'info' ? 'bg-blue-600' : 'bg-gray-900'}`}>
+          {toast.message}
+        </div>
+      )}
+
       <div className="max-w-[1200px] mx-auto px-4 flex flex-col md:flex-row gap-4">
         
         {/* Left Sidebar */}
@@ -448,9 +517,28 @@ function ProfilePageContent() {
                           className={`flex-1 border rounded px-4 py-2.5 text-sm focus:outline-none ${editingContact === 'email' ? 'border-[#2874f0] bg-white text-black' : 'border-gray-300 bg-gray-50 text-gray-500 cursor-not-allowed'}`} 
                         />
                         {editingContact !== 'email' ? (
-                          <span className="flex items-center gap-1.5 text-green-600 bg-green-50 px-3 py-1.5 rounded text-xs font-bold w-[90px]">
-                            <CheckCircle2 size={14} /> Verified
-                          </span>
+                          (user as any)?.isEmailVerified ? (
+                            <span className="flex items-center gap-1.5 text-green-600 bg-green-50 px-3 py-1.5 rounded text-xs font-bold w-[90px]">
+                              <CheckCircle2 size={14} /> Verified
+                            </span>
+                          ) : (
+                            <div className="flex gap-2">
+                              {verifyingContact === 'email' ? (
+                                <>
+                                  <input type="text" placeholder="6-digit OTP" maxLength={6} value={verificationOtp} onChange={e => setVerificationOtp(e.target.value)} className="border rounded px-2 py-1 text-sm w-[100px]" />
+                                  <button onClick={handleVerifyContact} className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold">Verify</button>
+                                  <button onClick={() => setVerifyingContact(null)} className="text-gray-500 px-2 py-1.5 rounded text-xs">Cancel</button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded text-xs font-bold w-[100px]">
+                                    Unverified
+                                  </span>
+                                  <button onClick={() => handleRequestVerification('email')} className="text-blue-600 text-xs font-bold hover:underline">Verify Now</button>
+                                </>
+                              )}
+                            </div>
+                          )
                         ) : (
                           <div className="flex gap-2">
                             <button onClick={() => handleContactSave('email')} className="bg-[#2874f0] text-white px-4 py-2.5 rounded text-sm font-medium hover:bg-blue-600 whitespace-nowrap">Save & Verify</button>
@@ -477,9 +565,28 @@ function ProfilePageContent() {
                           className={`flex-1 border rounded px-4 py-2.5 text-sm focus:outline-none ${editingContact === 'mobile' ? 'border-[#2874f0] bg-white text-black' : 'border-gray-300 bg-gray-50 text-gray-500 cursor-not-allowed'}`} 
                         />
                         {editingContact !== 'mobile' ? (
-                          <span className="flex items-center gap-1.5 text-green-600 bg-green-50 px-3 py-1.5 rounded text-xs font-bold w-[90px]">
-                            <CheckCircle2 size={14} /> Verified
-                          </span>
+                          (user as any)?.isPhoneVerified ? (
+                            <span className="flex items-center gap-1.5 text-green-600 bg-green-50 px-3 py-1.5 rounded text-xs font-bold w-[90px]">
+                              <CheckCircle2 size={14} /> Verified
+                            </span>
+                          ) : (
+                            <div className="flex gap-2">
+                              {verifyingContact === 'mobile' ? (
+                                <>
+                                  <input type="text" placeholder="6-digit OTP" maxLength={6} value={verificationOtp} onChange={e => setVerificationOtp(e.target.value)} className="border rounded px-2 py-1 text-sm w-[100px]" />
+                                  <button onClick={handleVerifyContact} className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold">Verify</button>
+                                  <button onClick={() => setVerifyingContact(null)} className="text-gray-500 px-2 py-1.5 rounded text-xs">Cancel</button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded text-xs font-bold w-[100px]">
+                                    Unverified
+                                  </span>
+                                  <button onClick={() => handleRequestVerification('phone')} className="text-blue-600 text-xs font-bold hover:underline">Verify Now</button>
+                                </>
+                              )}
+                            </div>
+                          )
                         ) : (
                           <div className="flex gap-2">
                             <button onClick={() => handleContactSave('mobile')} className="bg-[#2874f0] text-white px-4 py-2.5 rounded text-sm font-medium hover:bg-blue-600 whitespace-nowrap">Save & Verify</button>
@@ -516,7 +623,7 @@ function ProfilePageContent() {
 
               {/* ADDRESSES TAB */}
               {activeTab === 'addresses' && (
-                <AddressManager />
+                <AddressManager showToast={showToast} />
               )}
 
               {/* PASSWORD TAB */}
@@ -583,47 +690,47 @@ function ProfilePageContent() {
                           <th className="p-4 pr-6 text-right">Action</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {orders.map((order, i) => (
-                          <tr key={i} className="hover:bg-gray-50 transition-colors">
-                            <td className="p-4 pl-6 font-medium text-gray-900">{order.id}</td>
-                            <td className="p-4 text-sm text-gray-600">{order.date}</td>
-                            <td className="p-4">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(order.status)}`}>
-                                {order.status}
-                              </span>
-                            </td>
-                            <td className="p-4 font-semibold text-gray-900">{order.total}</td>
-                            <td className="p-4 pr-6 text-right">
-                              <Link href={`/order-confirmation/${order.id}`} className="text-blue-600 hover:underline text-sm font-medium">
-                                View Details
-                              </Link>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        <tbody className="divide-y divide-gray-100">
+                          {orders.map((order, i) => (
+                            <tr key={i} className="hover:bg-gray-50 transition-colors">
+                              <td className="p-4 pl-6 font-medium text-gray-900">{order.id.slice(0,8)}...</td>
+                              <td className="p-4 text-sm text-gray-600">{new Date(order.createdAt).toLocaleDateString()}</td>
+                              <td className="p-4">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(order.status)}`}>
+                                  {order.status}
+                                </span>
+                              </td>
+                              <td className="p-4 font-semibold text-gray-900">${order.totalAmount}</td>
+                              <td className="p-4 pr-6 text-right">
+                                <Link href={`/order-confirmation/${order.id}`} className="text-blue-600 hover:underline text-sm font-medium">
+                                  View Details
+                                </Link>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
 
-                  {/* Mobile Cards */}
-                  <div className="md:hidden divide-y divide-gray-100">
-                    {orders.map((order, i) => (
-                      <div key={i} className="p-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="font-bold text-gray-900">{order.id}</span>
-                          <span className="font-bold text-gray-900">{order.total}</span>
+                    {/* Mobile List */}
+                    <div className="md:hidden divide-y divide-gray-100 border-t border-gray-100">
+                      {orders.map((order, i) => (
+                        <div key={i} className="p-4">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="font-bold text-gray-900">{order.id.slice(0,8)}...</span>
+                            <span className="font-bold text-gray-900">${order.totalAmount}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm mb-4">
+                            <span className="text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</span>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(order.status)}`}>
+                              {order.status}
+                            </span>
+                          </div>
+                          <Link href={`/order-confirmation/${order.id}`} className="block w-full text-center border border-gray-300 rounded text-gray-700 py-2 text-sm font-medium">
+                            View Details
+                          </Link>
                         </div>
-                        <div className="flex justify-between items-center text-sm mb-4">
-                          <span className="text-gray-500">{order.date}</span>
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(order.status)}`}>
-                            {order.status}
-                          </span>
-                        </div>
-                        <Link href={`/order-confirmation/${order.id}`} className="block w-full text-center border border-gray-300 rounded text-gray-700 py-2 text-sm font-medium">
-                          View Details
-                        </Link>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </>
               )}

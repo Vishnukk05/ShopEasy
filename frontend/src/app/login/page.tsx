@@ -4,6 +4,8 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/axios';
+import { GoogleLogin } from '@react-oauth/google';
+import { jwtDecode } from 'jwt-decode';
 
 const slideImages = [
   "https://images.unsplash.com/photo-1483985988355-763728e1935b?w=800&h=1200&fit=crop",
@@ -12,8 +14,13 @@ const slideImages = [
 ];
 
 function LoginPageContent() {
-  const [email, setEmail] = useState('');
+  const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [useOtp, setUseOtp] = useState(true);
+  const [otpCode, setOtpCode] = useState('');
+  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [userIdForOtp, setUserIdForOtp] = useState('');
+
   const [currentSlide, setCurrentSlide] = useState(0);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
   const setAuth = useAuthStore((state) => state.setAuth);
@@ -25,6 +32,36 @@ function LoginPageContent() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [isResetOtpSent, setIsResetOtpSent] = useState(false);
+  const [resetUserId, setResetUserId] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailOrPhone) return showToast('Enter email or phone number');
+    
+    try {
+      if (!isResetOtpSent) {
+        const res = await api.post('/auth/forgot-password', { emailOrPhone });
+        setResetUserId(res.data.userId);
+        setIsResetOtpSent(true);
+        showToast('Reset OTP sent!', 'success');
+      } else {
+        if (!otpCode || !newPassword) return showToast('Enter OTP and new password');
+        await api.post('/auth/reset-password', { userId: resetUserId, otp: otpCode, newPassword });
+        showToast('Password reset successfully! Please login.', 'success');
+        setIsForgotPassword(false);
+        setIsResetOtpSent(false);
+        setOtpCode('');
+        setNewPassword('');
+        setPassword('');
+      }
+    } catch (err: any) {
+      showToast(err.response?.data?.message || 'Failed to reset password', 'error');
+    }
+  };
+
   useEffect(() => {
     const msg = searchParams.get('message');
     if (msg) showToast(msg, 'info');
@@ -34,19 +71,80 @@ function LoginPageContent() {
     return () => clearInterval(timer);
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !password) return showToast('Enter email and password');
+  const handleGoogleSuccess = async (credentialResponse: any) => {
     try {
-      const res = await api.post('/auth/login', { email, password });
+      const decoded: any = jwtDecode(credentialResponse.credential);
+      const res = await api.post('/auth/oauth', { 
+        provider: 'google', 
+        providerId: decoded.sub, 
+        email: decoded.email, 
+        name: decoded.name 
+      });
       setAuth(res.data.user, res.data.token);
-      if (res.data.user.role === 'ADMIN') {
+      if (res.data.user.role === 'ADMIN' || res.data.user.role === 'STAFF') {
         window.location.href = '/admin';
       } else {
         router.push('/');
       }
     } catch (err: any) {
+      showToast('Google login failed', 'error');
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailOrPhone) return showToast('Enter email or phone number');
+
+    const isEmail = emailOrPhone.includes('@');
+    const payload = isEmail ? { email: emailOrPhone } : { phone: emailOrPhone };
+
+    try {
+      if (useOtp) {
+        if (!isOtpSent) {
+          // Request OTP
+          const res = await api.post('/auth/login', { ...payload, requestOtp: true });
+          setUserIdForOtp(res.data.userId);
+          setIsOtpSent(true);
+          showToast('OTP sent to your device', 'success');
+        } else {
+          // Verify OTP
+          if (!otpCode) return showToast('Enter the OTP code');
+          const res = await api.post('/auth/verify-otp', { userId: userIdForOtp, otp: otpCode });
+          setAuth(res.data.user, res.data.token);
+          if (res.data.user.role === 'ADMIN' || res.data.user.role === 'STAFF') {
+            window.location.href = '/admin';
+          } else {
+            router.push('/');
+          }
+        }
+      } else {
+        // Password Login
+        if (!password) return showToast('Enter password');
+        const res = await api.post('/auth/login', { ...payload, password });
+        setAuth(res.data.user, res.data.token);
+        if (res.data.user.role === 'ADMIN' || res.data.user.role === 'STAFF') {
+          window.location.href = '/admin';
+        } else {
+          router.push('/');
+        }
+      }
+    } catch (err: any) {
       showToast(err.response?.data?.message || 'Login failed');
+    }
+  };
+
+  const handleOAuth = async (provider: string) => {
+    try {
+      const res = await api.post('/auth/oauth', {
+        provider,
+        providerId: `mock_${provider}_id_${Math.random()}`,
+        email: `mock_${provider}@example.com`,
+        name: `Mock ${provider} User`
+      });
+      setAuth(res.data.user, res.data.token);
+      router.push('/');
+    } catch (err: any) {
+      showToast('OAuth login failed');
     }
   };
 
@@ -68,42 +166,114 @@ function LoginPageContent() {
             <p className="text-gray-500 text-sm">Login to your account</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <input 
-                type="email" 
-                placeholder="Email address" 
-                className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            
-            <div className="relative">
-              <input 
-                type="password" 
-                placeholder="Password" 
-                className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <button type="button" className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          {isForgotPassword ? (
+            <form onSubmit={handleForgotPassword} className="space-y-5">
+              <div>
+                <input 
+                  type="text" 
+                  placeholder="Email address or Phone number" 
+                  className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                  value={emailOrPhone}
+                  onChange={(e) => setEmailOrPhone(e.target.value)}
+                  disabled={isResetOtpSent}
+                />
+              </div>
+
+              {isResetOtpSent && (
+                <>
+                  <div>
+                    <input 
+                      type="text" 
+                      placeholder="Enter 6-digit OTP" 
+                      className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      maxLength={6}
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="password" 
+                      placeholder="Enter new password" 
+                      className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-end pt-1">
+                <button type="button" onClick={() => setIsForgotPassword(false)} className="text-sm text-blue-600 font-semibold hover:underline">
+                  Back to login
+                </button>
+              </div>
+
+              <button type="submit" className="w-full bg-[#0d6efd] text-white font-bold py-3.5 rounded-lg hover:bg-blue-700 transition-colors mt-2 text-sm">
+                {isResetOtpSent ? 'Reset Password' : 'Send Reset OTP'}
               </button>
-            </div>
+            </form>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <input 
+                  type="text" 
+                  placeholder="Email address or Phone number" 
+                  className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                  value={emailOrPhone}
+                  onChange={(e) => setEmailOrPhone(e.target.value)}
+                  disabled={isOtpSent}
+                />
+              </div>
+              
+              {useOtp ? (
+                isOtpSent && (
+                  <div>
+                    <input 
+                      type="text" 
+                      placeholder="Enter 6-digit OTP" 
+                      className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      maxLength={6}
+                    />
+                  </div>
+                )
+              ) : (
+                <div className="relative">
+                  <input 
+                    type="password" 
+                    placeholder="Password" 
+                    className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+              )}
 
-            <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
-                <span className="text-sm text-gray-600 font-medium">Remember me</span>
-              </label>
-              <Link href="/forgot-password" className="text-sm text-blue-600 font-semibold hover:underline">Forgot password?</Link>
-            </div>
+              <div className="flex items-center justify-between pt-1">
+                {!useOtp ? (
+                  <button type="button" onClick={() => setIsForgotPassword(true)} className="text-sm text-blue-600 font-semibold hover:underline">
+                    Forgot Password?
+                  </button>
+                ) : (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
+                    <span className="text-sm text-gray-600 font-medium">Remember me</span>
+                  </label>
+                )}
+                {!isOtpSent && (
+                  <button type="button" onClick={() => setUseOtp(!useOtp)} className="text-sm text-blue-600 font-semibold hover:underline">
+                    {useOtp ? 'Login with Password' : 'Login with OTP'}
+                  </button>
+                )}
+              </div>
 
-            <button type="submit" className="w-full bg-[#0d6efd] text-white font-bold py-3.5 rounded-lg hover:bg-blue-700 transition-colors mt-2 text-sm">
-              Login
-            </button>
-          </form>
+              <button type="submit" className="w-full bg-[#0d6efd] text-white font-bold py-3.5 rounded-lg hover:bg-blue-700 transition-colors mt-2 text-sm">
+                {useOtp && !isOtpSent ? 'Send OTP' : 'Login'}
+              </button>
+            </form>
+          )}
 
           <div className="mt-8 relative">
             <div className="absolute inset-0 flex items-center">
@@ -114,12 +284,18 @@ function LoginPageContent() {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-4">
-            <button className="flex justify-center items-center gap-2 border border-gray-200 rounded-lg py-2.5 hover:bg-gray-50 transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="18px" height="18px"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
-              <span className="text-[#1e293b] font-semibold text-sm">Google</span>
-            </button>
-            <button className="flex justify-center items-center gap-2 border border-gray-200 rounded-lg py-2.5 hover:bg-gray-50 transition-colors">
+          <div className="mt-6 flex flex-col gap-4">
+            <div className="flex justify-center">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => showToast('Google login failed', 'error')}
+                shape="rectangular"
+                theme="outline"
+                size="large"
+                width="100%"
+              />
+            </div>
+            <button onClick={() => handleOAuth('facebook')} className="flex justify-center items-center gap-2 border border-gray-200 rounded-lg py-2.5 hover:bg-gray-50 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="18px" height="18px"><path fill="#039be5" d="M24 5A19 19 0 1 0 24 43A19 19 0 1 0 24 5Z"/><path fill="#fff" d="M26.572,29.036h4.917l0.772-4.995h-5.69v-2.73c0-2.075,0.678-3.915,2.619-3.915h3.119v-4.359c-0.548-0.074-1.707-0.236-3.897-0.236c-4.573,0-7.254,2.415-7.254,7.917v3.323h-4.701v4.995h4.701v13.729C22.089,42.905,23.032,43,24,43c0.875,0,1.729-0.08,2.572-0.194V29.036z"/></svg>
               <span className="text-[#1e293b] font-semibold text-sm">Facebook</span>
             </button>

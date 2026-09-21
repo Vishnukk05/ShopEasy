@@ -23,7 +23,7 @@ function HomeContent() {
   const isPreview = searchParams.get('preview') === 'true';
 
   useEffect(() => {
-    if (user?.role === 'ADMIN' && !isPreview) {
+    if (user && (user.role === 'ADMIN' || user.role === 'STAFF') && !isPreview) {
       router.replace('/admin');
     }
   }, [user, isPreview, router]);
@@ -31,7 +31,8 @@ function HomeContent() {
   const addItem = useCartStore((state) => state.addItem);
   const addToWishlist = useWishlistStore((state) => state.addItem);
   const removeFromWishlist = useWishlistStore((state) => state.removeItem);
-  const isInWishlist = useWishlistStore((state) => state.isInWishlist);
+  const wishlistItems = useWishlistStore((state) => state.items);
+  const isInWishlist = (id: string) => wishlistItems.some(i => i.id === id);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };

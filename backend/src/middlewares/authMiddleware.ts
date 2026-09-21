@@ -27,7 +27,7 @@ export const authenticateJWT = (req: AuthRequest, res: Response, next: NextFunct
 };
 
 export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user && req.user.role === 'ADMIN') {
+  if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF')) {
     next();
   } else {
     res.status(403).json({ message: 'Forbidden: Admin access required' });
