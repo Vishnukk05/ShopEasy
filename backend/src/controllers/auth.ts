@@ -287,44 +287,45 @@ export const forgotPassword = async (req: Request, res: Response): Promise<any> 
 
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const otpCode = generateOTP();
-    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    // Generate a reset token (hex string)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const otpExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
-    await prisma.user.update({ where: { id: user.id }, data: { otpCode, otpExpiresAt } });
+    // Save token in otpCode field
+    await prisma.user.update({ where: { id: user.id }, data: { otpCode: resetToken, otpExpiresAt } });
 
-    if (user.email && emailOrPhone === user.email) {
-      await sendEmailOTP(user.email, otpCode);
-    } else if (user.phone && emailOrPhone === user.phone) {
-      await sendSmsOTP(user.phone, otpCode);
-    } else if (user.email) {
-      await sendEmailOTP(user.email, otpCode);
+    if (user.email) {
+      const resetLink = `http://localhost:3000/reset-password?token=${resetToken}`;
+      await sendResetPasswordEmail(user.email, resetLink);
+      return res.json({ message: 'Password reset link sent to your email', userId: user.id });
+    } else {
+      return res.status(400).json({ message: 'No email associated with this account to send reset link' });
     }
 
-    res.json({ message: 'OTP sent for password reset', userId: user.id });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error on forgot password' });
+    console.error('Forgot password error:', error);
+    res.status(500).json({ message: 'Server error during forgot password' });
   }
 };
 
 export const resetPassword = async (req: Request, res: Response): Promise<any> => {
   try {
-    const { userId, otp, newPassword } = req.body;
+    const { token, newPassword } = req.body;
     
-    if (!userId || !otp || !newPassword) return res.status(400).json({ message: 'Missing required fields' });
+    if (!token || !newPassword) return res.status(400).json({ message: 'Missing token or new password' });
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const user = await prisma.user.findFirst({ where: { otpCode: token } });
+    if (!user) return res.status(404).json({ message: 'Invalid or expired token' });
 
-    if (user.otpCode !== otp || !user.otpExpiresAt || user.otpExpiresAt < new Date()) {
-      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    if (!user.otpExpiresAt || user.otpExpiresAt < new Date()) {
+      return res.status(400).json({ message: 'Reset link has expired' });
     }
 
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(newPassword, salt);
 
     await prisma.user.update({
-      where: { id: userId },
+      where: { id: user.id },
       data: {
         passwordHash,
         otpCode: null,
