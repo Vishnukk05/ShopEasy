@@ -16,10 +16,20 @@ export default function LoginModal() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  
+  // Forgot Password States
+  const [emailOrPhone, setEmailOrPhone] = useState('');
+  const [isResetOtpSent, setIsResetOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [resetUserId, setResetUserId] = useState('');
+
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isMounted, setIsMounted] = useState(false);
 
   const isLogin = authModalMode === 'login';
+  const isRegister = authModalMode === 'register';
+  const isForgotPassword = authModalMode === 'forgotPassword';
 
   useEffect(() => {
     setIsMounted(true);
@@ -38,6 +48,30 @@ export default function LoginModal() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      if (isForgotPassword) {
+        if (!isResetOtpSent) {
+          if (!emailOrPhone) return alert('Enter email or phone number');
+          const res = await api.post('/auth/forgot-password', { emailOrPhone });
+          if (res.data.type === 'phone') {
+            setResetUserId(res.data.userId);
+            setIsResetOtpSent(true);
+            alert('OTP sent to your phone!');
+          } else {
+            alert('Password reset link sent to your email!');
+            openAuthModal('login');
+          }
+        } else {
+          if (!otpCode || !newPassword) return alert('Enter OTP and new password');
+          await api.post('/auth/reset-password', { userId: resetUserId, otp: otpCode, newPassword });
+          alert('Password reset successfully! Please login.');
+          setIsResetOtpSent(false);
+          setOtpCode('');
+          setNewPassword('');
+          openAuthModal('login');
+        }
+        return;
+      }
+
       if (isLogin) {
         if (!email || !password) return alert('Enter email and password');
         const res = await api.post('/auth/login', { email, password });
@@ -46,14 +80,14 @@ export default function LoginModal() {
         if (res.data.user.role === 'ADMIN') {
           window.location.href = '/admin'; // Redirect strictly to admin
         }
-      } else {
+      } else if (isRegister) {
         if (!name || !email || !password) return alert('Enter all fields');
         const res = await api.post('/auth/register', { name, email, password });
         setAuth(res.data.user, res.data.token);
         setLoginModalOpen(false);
       }
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Authentication failed');
+      alert(err.response?.data?.message || 'Action failed');
     }
   };
 
@@ -82,86 +116,149 @@ export default function LoginModal() {
           <div className="mb-8">
             <img src="/logo.jpg" alt="ShopEasy Logo" className="h-20 md:h-24 w-auto mb-6 object-contain scale-[1.2] origin-left" />
             <h1 className="text-[28px] font-bold text-[#1e293b] mb-2 tracking-tight">
-              {isLogin ? 'Welcome Back' : 'Create Account'}
+              {isLogin ? 'Welcome Back' : isRegister ? 'Create Account' : 'Reset Password'}
             </h1>
             <p className="text-gray-500 text-sm">
-              {isLogin ? 'Login to your account' : 'Join us and start shopping today'}
+              {isLogin ? 'Login to your account' : isRegister ? 'Join us and start shopping today' : 'Enter details to reset your password'}
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             
-            {!isLogin && (
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <User size={18} className="text-gray-400" />
+            {isForgotPassword ? (
+              <>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <Mail size={18} className="text-gray-400" />
+                  </div>
+                  <input 
+                    type="text" 
+                    placeholder="Email address or Phone number" 
+                    className="w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                    value={emailOrPhone}
+                    onChange={(e) => setEmailOrPhone(e.target.value)}
+                    disabled={isResetOtpSent}
+                    required
+                  />
                 </div>
-                <input 
-                  type="text" 
-                  placeholder="Full Name" 
-                  className="w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                />
-              </div>
+
+                {isResetOtpSent && (
+                  <>
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        placeholder="Enter 6-digit OTP" 
+                        className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                        value={otpCode}
+                        onChange={(e) => setOtpCode(e.target.value)}
+                        maxLength={6}
+                        required
+                      />
+                    </div>
+                    <div className="relative">
+                      <input 
+                        type="password" 
+                        placeholder="Enter new password" 
+                        className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </>
+                )}
+
+                <button 
+                  type="submit" 
+                  className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-lg hover:bg-blue-700 transition-colors shadow-sm mt-2"
+                >
+                  {isResetOtpSent ? 'Verify & Reset' : 'Send Reset Link / OTP'}
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => openAuthModal('login')} 
+                  className="w-full text-gray-500 hover:text-gray-700 font-medium py-2 transition-colors text-sm"
+                >
+                  Back to Login
+                </button>
+              </>
+            ) : (
+              <>
+                {!isLogin && (
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <User size={18} className="text-gray-400" />
+                    </div>
+                    <input 
+                      type="text" 
+                      placeholder="Full Name" 
+                      className="w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                    />
+                  </div>
+                )}
+
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <Mail size={18} className="text-gray-400" />
+                  </div>
+                  <input 
+                    type="email" 
+                    placeholder="Email address" 
+                    className="w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <Lock size={18} className="text-gray-400" />
+                  </div>
+                  <input 
+                    type="password" 
+                    placeholder="Password" 
+                    className="w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {isLogin && (
+                  <div className="flex items-center justify-between pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                      <span className="text-sm text-gray-600">Remember me</span>
+                    </label>
+                    <button type="button" onClick={() => openAuthModal('forgotPassword')} className="text-sm font-medium text-blue-600 hover:underline">Forgot password?</button>
+                  </div>
+                )}
+
+                <button 
+                  type="submit" 
+                  className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-lg hover:bg-blue-700 transition-colors shadow-sm mt-2"
+                >
+                  {isLogin ? 'Log in' : 'Create Account'}
+                </button>
+              </>
             )}
-
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                <Mail size={18} className="text-gray-400" />
-              </div>
-              <input 
-                type="email" 
-                placeholder="Email address" 
-                className="w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                <Lock size={18} className="text-gray-400" />
-              </div>
-              <input 
-                type="password" 
-                placeholder="Password" 
-                className="w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            {isLogin && (
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                  <span className="text-sm text-gray-600">Remember me</span>
-                </label>
-                <a href="/login" onClick={() => setLoginModalOpen(false)} className="text-sm font-medium text-blue-600 hover:underline">Forgot password?</a>
-              </div>
-            )}
-
-            <button 
-              type="submit" 
-              className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-lg hover:bg-blue-700 transition-colors shadow-sm mt-2"
-            >
-              {isLogin ? 'Log in' : 'Create Account'}
-            </button>
           </form>
 
-          <p className="mt-8 text-center text-sm text-gray-500 font-medium">
-            {isLogin ? "Don't have an account? " : "Already have an account? "}
-            <button 
-              onClick={() => openAuthModal(isLogin ? 'register' : 'login')} 
-              className="text-blue-600 font-bold hover:underline"
-            >
-              {isLogin ? 'Register' : 'Log in'}
-            </button>
-          </p>
+          {!isForgotPassword && (
+            <p className="mt-8 text-center text-sm text-gray-500 font-medium">
+              {isLogin ? "Don't have an account? " : "Already have an account? "}
+              <button 
+                onClick={() => openAuthModal(isLogin ? 'register' : 'login')} 
+                className="text-blue-600 font-bold hover:underline"
+              >
+                {isLogin ? 'Register' : 'Log in'}
+              </button>
+            </p>
+          )}
         </div>
 
         {/* Right Side: Image Slideshow */}

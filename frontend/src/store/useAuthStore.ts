@@ -11,11 +11,11 @@ interface AuthState {
   user: User | null;
   token: string | null;
   isLoginModalOpen: boolean;
-  authModalMode: 'login' | 'register';
+  authModalMode: 'login' | 'register' | 'forgotPassword';
   setAuth: (user: User, token: string) => void;
   logout: () => void;
   setLoginModalOpen: (isOpen: boolean) => void;
-  openAuthModal: (mode: 'login' | 'register') => void;
+  openAuthModal: (mode: 'login' | 'register' | 'forgotPassword') => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({

@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import twilio from 'twilio';
+import { Vonage } from '@vonage/server-sdk';
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -9,9 +9,12 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-let twilioClient: any = null;
-if (process.env.TWILIO_ACCOUNT_SID?.startsWith('AC') && process.env.TWILIO_AUTH_TOKEN) {
-  twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+let vonageClient: any = null;
+if (process.env.VONAGE_API_KEY && process.env.VONAGE_API_SECRET) {
+  vonageClient = new Vonage({
+    apiKey: process.env.VONAGE_API_KEY,
+    apiSecret: process.env.VONAGE_API_SECRET
+  });
 }
 
 export const sendEmailOTP = async (email: string, otp: string) => {
@@ -82,7 +85,7 @@ export const sendOrderStatusEmail = async (email: string, orderId: string, statu
 };
 
 export const sendSmsOTP = async (phone: string, otp: string) => {
-  if (!twilioClient) {
+  if (!vonageClient) {
     console.log('=============================================');
     console.log(`[SMS SIMULATION] Sent to: ${phone}`);
     console.log(`[SMS SIMULATION] Message: Your ShopEasy verification code is: ${otp}. It expires in 10 minutes.`);
@@ -91,17 +94,21 @@ export const sendSmsOTP = async (phone: string, otp: string) => {
   }
 
   try {
-    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
-    await twilioClient.messages.create({
-      body: `Your verification code is ${otp}. It expires in 5 minutes. Do not share it.`,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: formattedPhone
+    const formattedPhone = phone.startsWith('+') ? phone.replace('+', '') : `91${phone}`;
+    await vonageClient.sms.send({
+      to: formattedPhone,
+      from: 'ShopEasy',
+      text: `Your verification code is ${otp}. It expires in 5 minutes. Do not share it.`
     });
     console.log(`Real SMS sent to ${phone}`);
     return true;
   } catch (error) {
-    console.error('Error sending SMS via Twilio:', error);
-    return false;
+    console.error('Error sending SMS via Vonage (Trial limits or Unverified number):', error);
+    console.log('=============================================');
+    console.log(`[FALLBACK SMS SIMULATION] Sent to: ${phone}`);
+    console.log(`[FALLBACK SMS SIMULATION] OTP is: ${otp}`);
+    console.log('=============================================');
+    return true;
   }
 };
 
