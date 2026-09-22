@@ -229,7 +229,7 @@ function ProfilePageContent() {
       }
       setIsEditingProfile(false);
     } catch (error) {
-      alert('Failed to update profile');
+      showToast('Failed to update profile', 'error');
     }
   };
 

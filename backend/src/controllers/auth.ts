@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import prisma from '../utils/db';
-import { generateOTP, sendEmailOTP, sendSmsOTP, sendResetPasswordEmail } from '../utils/notifications';
+import { generateOTP, sendEmailOTP, sendSmsOTP, sendResetPasswordWithOTP } from '../utils/notifications';
 
 const generateToken = (userId: string, role: string) => {
   return jwt.sign({ id: userId, role }, process.env.JWT_SECRET || 'secret', {
@@ -297,8 +297,8 @@ export const forgotPassword = async (req: Request, res: Response): Promise<any> 
       await sendSmsOTP(user.phone, otpCode);
       return res.json({ type: 'phone', message: 'OTP sent to your phone', userId: user.id });
     } else if (user.email) {
-      await sendEmailOTP(user.email, otpCode);
-      return res.json({ type: 'email', message: 'OTP sent to your email', userId: user.id });
+      await sendResetPasswordWithOTP(user.email, otpCode, user.id);
+      return res.json({ type: 'email', message: 'A reset link and OTP have been sent to your email', userId: user.id });
     } else {
       return res.status(400).json({ message: 'Account has no valid email or phone to reset' });
     }

@@ -33,31 +33,21 @@ function LoginPageContent() {
   };
 
   const [isForgotPassword, setIsForgotPassword] = useState(false);
-  const [isResetOtpSent, setIsResetOtpSent] = useState(false);
-  const [resetUserId, setResetUserId] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  const [isForgotSent, setIsForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailOrPhone) return showToast('Enter email or phone number');
-        try {
-        if (!isResetOtpSent) {
-          const res = await api.post('/auth/forgot-password', { emailOrPhone });
-          setResetUserId(res.data.userId);
-          setIsResetOtpSent(true);
-          showToast(res.data.message || 'OTP sent successfully!', 'success');
-        } else {
-          if (!otpCode || !newPassword) return showToast('Enter OTP and new password');
-          await api.post('/auth/reset-password', { userId: resetUserId, otp: otpCode, newPassword });
-          showToast('Password reset successfully! Please login.', 'success');
-          setIsForgotPassword(false);
-          setIsResetOtpSent(false);
-          setOtpCode('');
-          setNewPassword('');
-          setPassword('');
-        }
-      } catch (err: any) {
+    setForgotLoading(true);
+    try {
+      const res = await api.post('/auth/forgot-password', { emailOrPhone });
+      setIsForgotSent(true);
+      showToast(res.data.message || 'Reset link and OTP sent to your email!', 'success');
+    } catch (err: any) {
       showToast(err.response?.data?.message || 'Failed to process request', 'error');
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -166,57 +156,78 @@ function LoginPageContent() {
           </div>
 
           {isForgotPassword ? (
-            <form onSubmit={handleForgotPassword} className="space-y-5">
-              <div>
-                <input 
-                  type="text" 
-                  placeholder="Email address or Phone number" 
-                  className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
-                  value={emailOrPhone}
-                  onChange={(e) => setEmailOrPhone(e.target.value)}
-                  disabled={isResetOtpSent}
-                />
+            isForgotSent ? (
+              /* Success State - Email Sent */
+              <div className="space-y-5">
+                <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
+                  <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">Check Your Email!</h3>
+                  <p className="text-gray-600 text-sm leading-relaxed mb-1">
+                    We've sent a <strong>reset link</strong> and your <strong>OTP code</strong> to:
+                  </p>
+                  <p className="text-blue-600 font-semibold text-sm mb-3">{emailOrPhone}</p>
+                  <p className="text-gray-500 text-xs leading-relaxed">
+                    Click the link in the email to open the reset page, or go there manually and enter your OTP code.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => router.push('/reset-password')}
+                  className="w-full bg-[#2874f0] hover:bg-[#1a5cbd] text-white font-semibold py-3.5 rounded-lg transition-colors text-sm shadow-md"
+                >
+                  Go to Reset Password Page
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setIsForgotPassword(false); setIsForgotSent(false); setEmailOrPhone(''); }}
+                  className="w-full text-gray-500 hover:text-gray-700 font-medium py-2 transition-colors text-sm"
+                >
+                  Back to Login
+                </button>
               </div>
+            ) : (
+              /* Input Email Form */
+              <form onSubmit={handleForgotPassword} className="space-y-5">
+                <div className="mb-2">
+                  <h2 className="text-xl font-bold text-gray-900 mb-1">Forgot Password?</h2>
+                  <p className="text-gray-500 text-sm">Enter your email and we'll send you a reset link + OTP code.</p>
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Email address or Phone number"
+                    className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                    value={emailOrPhone}
+                    onChange={(e) => setEmailOrPhone(e.target.value)}
+                    autoFocus
+                  />
+                </div>
 
-              {isResetOtpSent && (
-                <>
-                  <div>
-                    <input 
-                      type="text" 
-                      placeholder="Enter 6-digit OTP" 
-                      className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
-                      value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
-                      maxLength={6}
-                    />
-                  </div>
-                  <div>
-                    <input 
-                      type="password" 
-                      placeholder="Enter new password" 
-                      className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                    />
-                  </div>
-                </>
-              )}
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="w-full bg-[#2874f0] hover:bg-[#1a5cbd] text-white font-semibold py-3.5 rounded-lg transition-colors text-sm shadow-md disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {forgotLoading ? (
+                    <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>Sending...</>
+                  ) : 'Send Reset Link & OTP'}
+                </button>
 
-              <button 
-                type="submit" 
-                className="w-full bg-[#2874f0] hover:bg-[#1a5cbd] text-white font-semibold py-3.5 rounded-lg transition-colors text-sm shadow-md"
-              >
-                {isResetOtpSent ? 'Verify & Reset Password' : 'Send Reset Link / OTP'}
-              </button>
-              
-              <button 
-                type="button" 
-                onClick={() => setIsForgotPassword(false)} 
-                className="w-full text-gray-500 hover:text-gray-700 font-medium py-2 transition-colors text-sm"
-              >
-                Back to Login
-              </button>
-            </form>
+                <button
+                  type="button"
+                  onClick={() => setIsForgotPassword(false)}
+                  className="w-full text-gray-500 hover:text-gray-700 font-medium py-2 transition-colors text-sm"
+                >
+                  Back to Login
+                </button>
+              </form>
+            )
           ) : (
             <form onSubmit={handleLogin} className="space-y-5">
               <div>
