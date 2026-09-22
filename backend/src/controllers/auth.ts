@@ -287,21 +287,25 @@ export const forgotPassword = async (req: Request, res: Response): Promise<any> 
 
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    // Generate a reset token (hex string)
-    const resetToken = crypto.randomBytes(32).toString('hex');
+    const isPhone = /^\+?\d+$/.test(emailOrPhone);
     const otpExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
-    // Save token in otpCode field
-    await prisma.user.update({ where: { id: user.id }, data: { otpCode: resetToken, otpExpiresAt } });
-
-    if (user.email) {
+    if (isPhone && user.phone) {
+      // Phone flow: Send 6-digit OTP
+      const otpCode = generateOTP();
+      await prisma.user.update({ where: { id: user.id }, data: { otpCode, otpExpiresAt } });
+      await sendSmsOTP(user.phone, otpCode);
+      return res.json({ type: 'phone', message: 'OTP sent to your phone', userId: user.id });
+    } else if (user.email) {
+      // Email flow: Send link with token
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      await prisma.user.update({ where: { id: user.id }, data: { otpCode: resetToken, otpExpiresAt } });
       const resetLink = `http://localhost:3000/reset-password?token=${resetToken}`;
       await sendResetPasswordEmail(user.email, resetLink);
-      return res.json({ message: 'Password reset link sent to your email', userId: user.id });
+      return res.json({ type: 'email', message: 'Password reset link sent to your email', userId: user.id });
     } else {
-      return res.status(400).json({ message: 'No email associated with this account to send reset link' });
+      return res.status(400).json({ message: 'Account has no valid email or phone to reset' });
     }
-
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ message: 'Server error during forgot password' });
@@ -310,15 +314,27 @@ export const forgotPassword = async (req: Request, res: Response): Promise<any> 
 
 export const resetPassword = async (req: Request, res: Response): Promise<any> => {
   try {
-    const { token, newPassword } = req.body;
+    const { token, userId, otp, newPassword } = req.body;
     
-    if (!token || !newPassword) return res.status(400).json({ message: 'Missing token or new password' });
+    if (!newPassword) return res.status(400).json({ message: 'Missing new password' });
 
-    const user = await prisma.user.findFirst({ where: { otpCode: token } });
-    if (!user) return res.status(404).json({ message: 'Invalid or expired token' });
+    let user;
+    
+    if (token) {
+      // Email flow
+      user = await prisma.user.findFirst({ where: { otpCode: token } });
+      if (!user) return res.status(404).json({ message: 'Invalid or expired token' });
+    } else if (userId && otp) {
+      // Phone flow
+      user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return res.status(404).json({ message: 'User not found' });
+      if (user.otpCode !== otp) return res.status(400).json({ message: 'Invalid OTP' });
+    } else {
+      return res.status(400).json({ message: 'Missing token or OTP' });
+    }
 
     if (!user.otpExpiresAt || user.otpExpiresAt < new Date()) {
-      return res.status(400).json({ message: 'Reset link has expired' });
+      return res.status(400).json({ message: 'Reset link or OTP has expired' });
     }
 
     const salt = await bcrypt.genSalt(10);

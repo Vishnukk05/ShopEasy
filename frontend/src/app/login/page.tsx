@@ -42,13 +42,29 @@ function LoginPageContent() {
     if (!emailOrPhone) return showToast('Enter email or phone number');
     
     try {
-      await api.post('/auth/forgot-password', { emailOrPhone });
-      showToast('Password reset link sent to your email!', 'success');
-      setTimeout(() => {
+      if (!isResetOtpSent) {
+        const res = await api.post('/auth/forgot-password', { emailOrPhone });
+        
+        if (res.data.type === 'phone') {
+          setResetUserId(res.data.userId);
+          setIsResetOtpSent(true);
+          showToast('OTP sent to your phone!', 'success');
+        } else {
+          showToast('Password reset link sent to your email!', 'success');
+          setTimeout(() => setIsForgotPassword(false), 2000);
+        }
+      } else {
+        if (!otpCode || !newPassword) return showToast('Enter OTP and new password');
+        await api.post('/auth/reset-password', { userId: resetUserId, otp: otpCode, newPassword });
+        showToast('Password reset successfully! Please login.', 'success');
         setIsForgotPassword(false);
-      }, 2000);
+        setIsResetOtpSent(false);
+        setOtpCode('');
+        setNewPassword('');
+        setPassword('');
+      }
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Failed to send reset link', 'error');
+      showToast(err.response?.data?.message || 'Failed to process request', 'error');
     }
   };
 
@@ -165,14 +181,39 @@ function LoginPageContent() {
                   className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
                   value={emailOrPhone}
                   onChange={(e) => setEmailOrPhone(e.target.value)}
+                  disabled={isResetOtpSent}
                 />
               </div>
+
+              {isResetOtpSent && (
+                <>
+                  <div>
+                    <input 
+                      type="text" 
+                      placeholder="Enter 6-digit OTP" 
+                      className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      maxLength={6}
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="password" 
+                      placeholder="Enter new password" 
+                      className="w-full px-4 py-3.5 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
 
               <button 
                 type="submit" 
                 className="w-full bg-[#2874f0] hover:bg-[#1a5cbd] text-white font-semibold py-3.5 rounded-lg transition-colors text-sm shadow-md"
               >
-                Send Reset Link
+                {isResetOtpSent ? 'Verify & Reset Password' : 'Send Reset Link / OTP'}
               </button>
               
               <button 
