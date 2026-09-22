@@ -1,9 +1,16 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
+import cache from '../utils/cache';
 
 export const getProducts = async (req: Request, res: Response) => {
   try {
     const { category, search } = req.query;
+    const cacheKey = `products_${category || 'all'}_${search || 'all'}`;
+    const cachedProducts = cache.get(cacheKey);
+
+    if (cachedProducts) {
+      return res.json(cachedProducts);
+    }
     
     const products = await prisma.product.findMany({
       where: {
@@ -18,6 +25,8 @@ export const getProducts = async (req: Request, res: Response) => {
       },
       include: { category: true },
     });
+    
+    cache.set(cacheKey, products);
     res.json(products);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -55,6 +64,7 @@ export const createProduct = async (req: Request, res: Response) => {
         images,
       },
     });
+    cache.flushAll();
     res.status(201).json(product);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -79,6 +89,7 @@ export const updateProduct = async (req: Request, res: Response) => {
         images,
       },
     });
+    cache.flushAll();
     res.json(product);
   } catch (error: any) {
     console.error('Update Product Error:', error);
@@ -96,6 +107,7 @@ export const deleteProduct = async (req: Request, res: Response): Promise<any> =
     await prisma.product.delete({
       where: { id: String(id) }
     });
+    cache.flushAll();
     res.json({ message: 'Product deleted successfully' });
   } catch (error) {
     console.error(error);
@@ -173,6 +185,11 @@ export const createProductsBulk = async (req: Request, res: Response) => {
         errors.push('Row ' + (index + 1) + ': ' + err.message);
       }
     }
+    
+    if (successCount > 0) {
+      cache.flushAll();
+    }
+    
     return res.status(200).json({ message: 'Imported ' + successCount + ' products successfully.', errors });
   } catch (error: any) {
     return res.status(500).json({ message: 'Server error during bulk import', error: error.message });

@@ -18,6 +18,10 @@ export default function AdminPage() {
   const { user, logout } = useAuthStore();
   const [activeMenu, setActiveMenu] = useState('dashboard');
   
+  // Admin Products Pagination
+  const [adminProdPage, setAdminProdPage] = useState(1);
+  const adminProdsPerPage = 20;
+  
   // Custom Alerts & Confirms
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -609,7 +613,7 @@ export default function AdminPage() {
                 <table className="w-full text-left text-sm">
                   <thead><tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500 font-semibold"><th className="p-4 pl-6 w-20">Image</th><th className="p-4">Product</th><th className="p-4">Price</th><th className="p-4">Rating</th><th className="p-4">Stock</th><th className="p-4 text-right">Actions</th></tr></thead>
                   <tbody className="divide-y divide-gray-100">
-                    {products.map(product => (
+                      {products.slice((adminProdPage - 1) * adminProdsPerPage, adminProdPage * adminProdsPerPage).map(product => (
                       <tr key={product.id} className="hover:bg-gray-50">
                         <td className="p-4 pl-6">
                           {product.images && product.images.length > 0 ? (
@@ -650,6 +654,22 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
+
+              {Math.ceil(products.length / adminProdsPerPage) > 1 && (
+                <div className="flex justify-between items-center bg-white p-4 border border-gray-200 rounded-xl mt-4">
+                  <button 
+                    disabled={adminProdPage === 1} 
+                    onClick={() => setAdminProdPage(p => Math.max(1, p - 1))}
+                    className="px-4 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >Previous</button>
+                  <span className="text-sm text-gray-500">Page {adminProdPage} of {Math.ceil(products.length / adminProdsPerPage)}</span>
+                  <button 
+                    disabled={adminProdPage === Math.ceil(products.length / adminProdsPerPage)} 
+                    onClick={() => setAdminProdPage(p => p + 1)}
+                    className="px-4 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >Next</button>
+                </div>
+              )}
             </div>
           )}
 

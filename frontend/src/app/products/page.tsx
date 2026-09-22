@@ -83,6 +83,7 @@ export default function ProductsPage() {
     result = result.filter(p => parseFloat(p.price) <= maxPrice);
 
     setFilteredProducts(result);
+    setCurrentPage(1);
   }, [selectedCats, selectedBrands, maxPrice, allProducts]);
 
   const toggleCategory = (catName: string) => {
@@ -97,7 +98,14 @@ export default function ProductsPage() {
     setSelectedCats([]);
     setSelectedBrands([]);
     setMaxPrice(50000);
+    setCurrentPage(1);
   };
+
+  // Pagination Logic
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 24;
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const paginatedProducts = filteredProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div className="bg-[#f8f9fa] min-h-screen pb-20 font-sans">
@@ -222,7 +230,7 @@ export default function ProductsPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                {filteredProducts.map((product) => {
+                {paginatedProducts.map((product) => {
                   const oPrice = product.originalPrice ? parseFloat(product.originalPrice) : null;
                   const cPrice = parseFloat(product.price);
                   const discountPct = oPrice && oPrice > cPrice 
@@ -301,6 +309,35 @@ export default function ProductsPage() {
                     </div>
                   </div>
                 )})}
+              </div>
+            )}
+            
+            {/* Pagination Controls */}
+            {!loading && !error && totalPages > 1 && (
+              <div className="flex justify-center items-center gap-4 mt-12">
+                <button 
+                  disabled={currentPage === 1}
+                  onClick={() => {
+                    setCurrentPage(prev => Math.max(prev - 1, 1));
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-600 font-medium">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button 
+                  disabled={currentPage === totalPages}
+                  onClick={() => {
+                    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             )}
             

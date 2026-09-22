@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
+import cache from '../utils/cache';
 import { sendOrderStatusEmail, transporter } from '../utils/notifications';
 
 export const getUsers = async (req: Request, res: Response) => {
@@ -29,6 +30,7 @@ export const createDeal = async (req: Request, res: Response): Promise<any> => {
         imageUrl
       }
     });
+    cache.flushAll();
     res.status(201).json(deal);
   } catch (error) {
     res.status(500).json({ message: 'Server error creating deal' });
@@ -37,11 +39,16 @@ export const createDeal = async (req: Request, res: Response): Promise<any> => {
 
 export const deleteDeal = async (req: Request, res: Response) => {
   await prisma.deal.delete({ where: { id: req.params.id as string } });
+  cache.flushAll();
   res.json({ success: true });
 };
 
 export const getBanners = async (req: Request, res: Response) => {
+  const cachedBanners = cache.get('banners_all');
+  if (cachedBanners) return res.json(cachedBanners);
+  
   const banners = await prisma.banner.findMany();
+  cache.set('banners_all', banners);
   res.json(banners);
 };
 
@@ -54,11 +61,13 @@ export const createBanner = async (req: Request, res: Response) => {
   }
 
   const banner = await prisma.banner.create({ data: { title, imageUrl } });
+  cache.flushAll();
   res.json(banner);
 };
 
 export const deleteBanner = async (req: Request, res: Response) => {
   await prisma.banner.delete({ where: { id: req.params.id as string } });
+  cache.flushAll();
   res.json({ success: true });
 };
 
