@@ -52,14 +52,9 @@ export default function LoginModal() {
         if (!isResetOtpSent) {
           if (!emailOrPhone) return alert('Enter email or phone number');
           const res = await api.post('/auth/forgot-password', { emailOrPhone });
-          if (res.data.type === 'phone') {
-            setResetUserId(res.data.userId);
-            setIsResetOtpSent(true);
-            alert('OTP sent to your phone!');
-          } else {
-            alert('Password reset link sent to your email!');
-            openAuthModal('login');
-          }
+          setResetUserId(res.data.userId);
+          setIsResetOtpSent(true);
+          alert(res.data.message || 'OTP sent successfully!');
         } else {
           if (!otpCode || !newPassword) return alert('Enter OTP and new password');
           await api.post('/auth/reset-password', { userId: resetUserId, otp: otpCode, newPassword });

@@ -40,30 +40,23 @@ function LoginPageContent() {
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailOrPhone) return showToast('Enter email or phone number');
-    
-    try {
-      if (!isResetOtpSent) {
-        const res = await api.post('/auth/forgot-password', { emailOrPhone });
-        
-        if (res.data.type === 'phone') {
+        try {
+        if (!isResetOtpSent) {
+          const res = await api.post('/auth/forgot-password', { emailOrPhone });
           setResetUserId(res.data.userId);
           setIsResetOtpSent(true);
-          showToast('OTP sent to your phone!', 'success');
+          showToast(res.data.message || 'OTP sent successfully!', 'success');
         } else {
-          showToast('Password reset link sent to your email!', 'success');
-          setTimeout(() => setIsForgotPassword(false), 2000);
+          if (!otpCode || !newPassword) return showToast('Enter OTP and new password');
+          await api.post('/auth/reset-password', { userId: resetUserId, otp: otpCode, newPassword });
+          showToast('Password reset successfully! Please login.', 'success');
+          setIsForgotPassword(false);
+          setIsResetOtpSent(false);
+          setOtpCode('');
+          setNewPassword('');
+          setPassword('');
         }
-      } else {
-        if (!otpCode || !newPassword) return showToast('Enter OTP and new password');
-        await api.post('/auth/reset-password', { userId: resetUserId, otp: otpCode, newPassword });
-        showToast('Password reset successfully! Please login.', 'success');
-        setIsForgotPassword(false);
-        setIsResetOtpSent(false);
-        setOtpCode('');
-        setNewPassword('');
-        setPassword('');
-      }
-    } catch (err: any) {
+      } catch (err: any) {
       showToast(err.response?.data?.message || 'Failed to process request', 'error');
     }
   };

@@ -27,27 +27,12 @@ export const sendEmailOTP = async (email: string, otp: string) => {
     const info = await transporter.sendMail({
       from: `"ShopEasy" <${process.env.SMTP_EMAIL}>`,
       to: email,
-      subject: `ShopEasy – Your one-time verification code: ${otp}`,
+      subject: `ShopEasy - Your OTP is ${otp}`,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; line-height: 1.6;">
-          <p>Hi Customer,</p>
-          <p>Thank you for choosing ShopEasy.</p>
-          <p>Use the following One-Time Password (OTP) to complete your verification process. This code is valid for the next 10 minutes.</p>
-          
-          <h2 style="font-size: 28px; letter-spacing: 4px; padding: 15px; background: #f9f9f9; text-align: center; border-radius: 6px; border: 1px solid #e5e5e5; display: inline-block; margin: 10px 0;">
-            ${otp.substring(0, 3)} ${otp.substring(3)}
-          </h2>
-          
-          <p><strong>Important Security Notice:</strong><br>
-          For your security, never share this code with anyone. Employees of ShopEasy will never ask you for this password over the phone, email, or via text message.</p>
-          
-          <p>If you did not request this code, please ignore this email or change your account security settings immediately.</p>
-          
-          <p>Best regards,<br>
-          The ShopEasy Security Team<br>
-          <a href="http://localhost:3000" style="color: #0d6efd;">ShopEasy Website</a></p>
-        </div>
-      `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; line-height: 1.6; padding: 20px;">
+            <p>Welcome to ShopEasy! Your OTP is <strong>${otp}</strong>, valid for 5 minutes. Please do not share it with anyone. Thank you for choosing ShopEasy!</p>
+          </div>
+        `
     });
     console.log(`Real email sent to ${email}. MessageId: ${info.messageId}`);
     return true;
@@ -98,7 +83,7 @@ export const sendSmsOTP = async (phone: string, otp: string) => {
     await vonageClient.sms.send({
       to: formattedPhone,
       from: 'ShopEasy',
-      text: `Your verification code is ${otp}. It expires in 5 minutes. Do not share it.`
+      text: `Welcome to ShopEasy! Your OTP is ${otp}, valid for 5 minutes. Please do not share it with anyone. Thank you for choosing ShopEasy!`
     });
     console.log(`Real SMS sent to ${phone}`);
     return true;

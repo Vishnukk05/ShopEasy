@@ -285,24 +285,20 @@ export const forgotPassword = async (req: Request, res: Response): Promise<any> 
       }
     });
 
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) return res.status(404).json({ message: 'The entered email/phone is not matched to any account' });
 
     const isPhone = /^\+?\d+$/.test(emailOrPhone);
     const otpExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+    const otpCode = generateOTP();
+
+    await prisma.user.update({ where: { id: user.id }, data: { otpCode, otpExpiresAt } });
 
     if (isPhone && user.phone) {
-      // Phone flow: Send 6-digit OTP
-      const otpCode = generateOTP();
-      await prisma.user.update({ where: { id: user.id }, data: { otpCode, otpExpiresAt } });
       await sendSmsOTP(user.phone, otpCode);
       return res.json({ type: 'phone', message: 'OTP sent to your phone', userId: user.id });
     } else if (user.email) {
-      // Email flow: Send link with token
-      const resetToken = crypto.randomBytes(32).toString('hex');
-      await prisma.user.update({ where: { id: user.id }, data: { otpCode: resetToken, otpExpiresAt } });
-      const resetLink = `http://localhost:3000/reset-password?token=${resetToken}`;
-      await sendResetPasswordEmail(user.email, resetLink);
-      return res.json({ type: 'email', message: 'Password reset link sent to your email', userId: user.id });
+      await sendEmailOTP(user.email, otpCode);
+      return res.json({ type: 'email', message: 'OTP sent to your email', userId: user.id });
     } else {
       return res.status(400).json({ message: 'Account has no valid email or phone to reset' });
     }
