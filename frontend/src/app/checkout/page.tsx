@@ -18,6 +18,7 @@ export default function CheckoutPage() {
   const [formData, setFormData] = useState({
     fullName: '', phone: '', address: '', city: '', state: '', pincode: '', country: 'India', paymentMethod: 'Card'
   });
+  const [cityOptions, setCityOptions] = useState<string[]>([]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -25,6 +26,32 @@ export default function CheckoutPage() {
       router.push('/login?message=Please+login+to+continue+to+checkout');
     }
   }, [isMounted, user, router]);
+
+  useEffect(() => {
+    const fetchPincodeDetails = async () => {
+      if (formData.pincode.length === 6 && /^\d+$/.test(formData.pincode)) {
+        try {
+          const res = await fetch(`https://api.postalpincode.in/pincode/${formData.pincode}`);
+          const data = await res.json();
+          if (data[0].Status === "Success") {
+            const postOffices = data[0].PostOffice;
+            const state = postOffices[0].State;
+            const districts = Array.from(new Set(postOffices.map((po: any) => po.District))) as string[];
+            
+            setCityOptions(districts);
+            setFormData(prev => ({
+              ...prev,
+              state: state,
+              city: districts.length === 1 ? districts[0] : prev.city
+            }));
+          }
+        } catch (err) {
+          console.error("Failed to fetch pincode details:", err);
+        }
+      }
+    };
+    fetchPincodeDetails();
+  }, [formData.pincode]);
 
   if (!isMounted) {
     return null; // or a loading spinner
@@ -128,10 +155,17 @@ export default function CheckoutPage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                       <input type="text" value={formData.address} onChange={e=>setFormData({...formData, address: e.target.value})} className="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none" placeholder="123, Main Street" />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                      <input type="text" value={formData.city} onChange={e=>setFormData({...formData, city: e.target.value})} className="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none" placeholder="Chennai" />
-                    </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                        {cityOptions.length > 0 ? (
+                          <select value={formData.city} onChange={e=>setFormData({...formData, city: e.target.value})} className="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none bg-white">
+                            <option value="">Select City</option>
+                            {cityOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        ) : (
+                          <input type="text" value={formData.city} onChange={e=>setFormData({...formData, city: e.target.value})} className="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none" placeholder="Chennai" />
+                        )}
+                      </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
                       <input type="text" value={formData.state} onChange={e=>setFormData({...formData, state: e.target.value})} className="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none" placeholder="Tamil Nadu" />

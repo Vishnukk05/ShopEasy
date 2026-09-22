@@ -5,7 +5,7 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import api from '@/lib/axios';
 import { useAuthStore } from '@/store/useAuthStore';
-import { LayoutDashboard, Package, ShoppingCart, Users, Settings, Plus, Edit, Trash2, Search, X, Folder, Image as ImageIcon, MessageSquare, Send, CheckCircle, Power } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Users, Settings, Plus, Edit, Trash2, Search, X, Folder, Image as ImageIcon, MessageSquare, Send, CheckCircle, Power, Zap } from 'lucide-react';
 
 interface Product { id: string; name: string; description: string; price: number; originalPrice: number | null; rating: number | null; stockQuantity: number; categoryId: string; category: { name: string }; images: string[]; }
 interface Category { id: string; name: string; imageUrl?: string; }
@@ -34,6 +34,11 @@ export default function AdminPage() {
   const [banners, setBanners] = useState<Banner[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [deals, setDeals] = useState<any[]>([]);
+  
+  const [isDealFormOpen, setIsDealFormOpen] = useState(false);
+  const [dealFormData, setDealFormData] = useState({ title: '', imageUrl: '', discount: '', price: '', originalPrice: '', endTime: '' });
+  const [dealImageFile, setDealImageFile] = useState<File | null>(null);
   
   // Product Form
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -48,6 +53,7 @@ export default function AdminPage() {
   // Banner Form
   const [isBannerFormOpen, setIsBannerFormOpen] = useState(false);
   const [bannerFormData, setBannerFormData] = useState({ title: '', imageUrl: '' });
+  const [bannerImageFile, setBannerImageFile] = useState<File | null>(null);
 
   // User Form
   const [isUserFormOpen, setIsUserFormOpen] = useState(false);
@@ -56,6 +62,7 @@ export default function AdminPage() {
   // Campaign Form
   const [isCampaignFormOpen, setIsCampaignFormOpen] = useState(false);
   const [campaignFormData, setCampaignFormData] = useState({ subject: '', message: '' });
+  const [campaignImageFile, setCampaignImageFile] = useState<File | null>(null);
 
   // Orders State
   const [orders, setOrders] = useState<any[]>([]);
@@ -67,6 +74,7 @@ export default function AdminPage() {
     api.get('/admin/banners').then(res => setBanners(res.data)).catch(() => {});
     api.get('/admin/tickets').then(res => setTickets(res.data)).catch(() => {});
     api.get('/admin/campaigns').then(res => setCampaigns(res.data)).catch(() => {});
+    api.get('/deals').then(res => setDeals(res.data)).catch(() => {});
     api.get('/admin/orders').then(res => setOrders(res.data)).catch(() => {});
   };
 
@@ -88,6 +96,12 @@ export default function AdminPage() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Products');
     
+    const categoriesSheet = workbook.addWorksheet('CategoriesList');
+    categoriesSheet.state = 'hidden';
+    categories.forEach((c, idx) => {
+      categoriesSheet.getCell(`A${idx + 1}`).value = c.name;
+    });
+
     worksheet.columns = [
       { header: 'name', key: 'name', width: 30 },
       { header: 'description', key: 'description', width: 40 },
@@ -108,23 +122,26 @@ export default function AdminPage() {
         stockQuantity: p.stockQuantity,
         categoryName: p.category?.name || '',
         images: p.images ? p.images.join(', ') : '',
-        rating: p.rating || 0
+        rating: p.rating || ''
       });
     });
 
-    const categoryNames = categories.map(c => c.name);
-    const formulaStr = `"${categoryNames.join(',')}"`;
-
-    for (let i = 2; i <= 1000; i++) {
-      worksheet.getCell(`F${i}`).dataValidation = {
-        type: 'list',
-        allowBlank: true,
-        formulae: [formulaStr]
-      };
+    if (categories.length > 0) {
+      for (let i = 2; i <= Math.max(products.length + 500, 1000); i++) {
+        worksheet.getCell(`F${i}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [`'CategoriesList'!$A$1:$A$${categories.length}`],
+          showErrorMessage: true,
+          errorStyle: 'error',
+          errorTitle: 'Invalid Category',
+          error: 'Please select a valid category from the dropdown.'
+        };
+      }
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
-    saveAs(new Blob([buffer]), 'products_export.xlsx');
+    saveAs(new Blob([buffer]), 'products.xlsx');
   };
 
   const handleImportProducts = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -274,9 +291,21 @@ export default function AdminPage() {
   const handleBannerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/admin/banners', bannerFormData);
+      const formData = new FormData();
+      formData.append('title', bannerFormData.title);
+      if (bannerImageFile) {
+        formData.append('image', bannerImageFile);
+      } else {
+        formData.append('imageUrl', bannerFormData.imageUrl);
+      }
+
+      await api.post('/admin/banners', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      
       setIsBannerFormOpen(false);
       setBannerFormData({ title: '', imageUrl: '' });
+      setBannerImageFile(null);
       fetchData();
       showToast('Banner saved!', 'success');
     } catch (err: any) {
@@ -307,14 +336,68 @@ export default function AdminPage() {
   const handleCampaignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/admin/campaigns', campaignFormData);
+      const formData = new FormData();
+      formData.append('subject', campaignFormData.subject);
+      formData.append('message', campaignFormData.message);
+      if (campaignImageFile) {
+        formData.append('image', campaignImageFile);
+      }
+
+      await api.post('/admin/campaigns', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
       showToast('Marketing email dispatched to all users successfully!', 'success');
       setIsCampaignFormOpen(false);
       setCampaignFormData({ subject: '', message: '' });
+      setCampaignImageFile(null);
       fetchData();
     } catch (err: any) {
       showToast('Failed to dispatch marketing email.', 'error');
     }
+  };
+
+  const handleDealSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const formData = new FormData();
+      formData.append('title', dealFormData.title);
+      formData.append('discount', dealFormData.discount);
+      formData.append('price', dealFormData.price);
+      if (dealFormData.originalPrice) formData.append('originalPrice', dealFormData.originalPrice);
+      formData.append('endTime', dealFormData.endTime);
+      
+      if (dealImageFile) {
+        formData.append('image', dealImageFile);
+      } else {
+        formData.append('imageUrl', dealFormData.imageUrl);
+      }
+
+      await api.post('/admin/deals', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      showToast('Deal saved!', 'success');
+      setIsDealFormOpen(false);
+      setDealFormData({ title: '', imageUrl: '', discount: '', price: '', originalPrice: '', endTime: '' });
+      setDealImageFile(null);
+      fetchData();
+    } catch (err: any) {
+      showToast('Failed to save deal.', 'error');
+    }
+  };
+
+  const handleDealDelete = async (id: string) => {
+    setConfirmDialog({
+      message: 'Are you sure you want to delete this deal?',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/admin/deals/${id}`);
+          fetchData();
+          showToast('Deal deleted!', 'success');
+        } catch (err) {
+          showToast('Failed to delete deal.', 'error');
+        }
+      }
+    });
   };
 
   if (!isMounted) return null;
@@ -371,6 +454,7 @@ export default function AdminPage() {
               { id: 'products', icon: <Package size={20}/>, label: 'Products' },
               { id: 'categories', icon: <Folder size={20}/>, label: 'Categories' },
             { id: 'users', icon: <Users size={20}/>, label: 'Customers' },
+            { id: 'deals', icon: <Zap size={20}/>, label: 'Deals of the Day' },
             { id: 'banners', icon: <ImageIcon size={20}/>, label: 'Offers / Banners' },
             { id: 'tickets', icon: <MessageSquare size={20}/>, label: 'Support Tickets' },
             { id: 'campaigns', icon: <Send size={20}/>, label: 'Marketing Emails' },
@@ -652,6 +736,75 @@ export default function AdminPage() {
             </div>
           )}
 
+          {/* DEALS MODULE */}
+          {activeMenu === 'deals' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-800">Deals of the Day</h2>
+                <button onClick={() => setIsDealFormOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Plus size={16} /> Add New Deal</button>
+              </div>
+              {isDealFormOpen && (
+                <form onSubmit={handleDealSubmit} className="bg-white p-6 border rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm mb-1">Deal Title</label>
+                    <input type="text" required value={dealFormData.title} onChange={e => setDealFormData({...dealFormData, title: e.target.value})} className="w-full border p-2 rounded" placeholder="iPhone 15 Pro Max" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Discount Text</label>
+                    <input type="text" required value={dealFormData.discount} onChange={e => setDealFormData({...dealFormData, discount: e.target.value})} className="w-full border p-2 rounded" placeholder="40% OFF" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Price ($)</label>
+                    <input type="number" step="0.01" required value={dealFormData.price} onChange={e => setDealFormData({...dealFormData, price: e.target.value})} className="w-full border p-2 rounded" placeholder="99.99" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Original Price ($) (Optional)</label>
+                    <input type="number" step="0.01" value={dealFormData.originalPrice} onChange={e => setDealFormData({...dealFormData, originalPrice: e.target.value})} className="w-full border p-2 rounded" placeholder="149.99" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Upload Image</label>
+                    <input type="file" accept="image/*" onChange={e => setDealImageFile(e.target.files ? e.target.files[0] : null)} className="w-full border p-1.5 rounded" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Or Image URL</label>
+                    <input type="url" value={dealFormData.imageUrl} onChange={e => setDealFormData({...dealFormData, imageUrl: e.target.value})} className="w-full border p-2 rounded" placeholder="https://..." />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm mb-1">End Time</label>
+                    <input type="datetime-local" required value={dealFormData.endTime} onChange={e => setDealFormData({...dealFormData, endTime: e.target.value})} className="w-full border p-2 rounded" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <button type="submit" className="bg-gray-900 text-white px-6 py-2 rounded-md">Save Deal</button>
+                    <button type="button" onClick={() => setIsDealFormOpen(false)} className="ml-4 text-gray-500 hover:text-gray-700">Cancel</button>
+                  </div>
+                </form>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {deals.map(deal => (
+                  <div key={deal.id} className="bg-white border rounded-xl overflow-hidden relative group p-4 flex flex-col">
+                    <button onClick={() => handleDealDelete(deal.id)} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-600"><Trash2 size={14} /></button>
+                    <div className="aspect-square bg-gray-50 relative mb-4 flex items-center justify-center rounded-lg overflow-hidden">
+                      {deal.imageUrl ? <img src={deal.imageUrl} alt={deal.title} className="w-full h-full object-contain mix-blend-multiply" /> : <ImageIcon className="text-gray-300" size={40} />}
+                      <div className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded shadow-sm">
+                        {deal.discount}
+                      </div>
+                    </div>
+                    <div className="flex flex-col flex-grow">
+                      <h3 className="font-medium text-gray-900 line-clamp-2 text-sm mb-2">{deal.title}</h3>
+                      <div className="mt-auto flex items-end gap-2">
+                        <span className="text-lg font-bold text-gray-900">${deal.price}</span>
+                        {deal.originalPrice && <span className="text-sm text-gray-400 line-through mb-0.5">${deal.originalPrice}</span>}
+                      </div>
+                      <div className="text-xs text-red-500 mt-2 font-bold flex items-center gap-1">
+                        Ends: {new Date(deal.endTime).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* BANNERS MODULE */}
           {activeMenu === 'banners' && (
             <div className="space-y-6">
@@ -661,9 +814,21 @@ export default function AdminPage() {
               </div>
               {isBannerFormOpen && (
                 <form onSubmit={handleBannerSubmit} className="bg-white p-6 border rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm mb-1">Banner Title</label><input type="text" required value={bannerFormData.title} onChange={e => setBannerFormData({...bannerFormData, title: e.target.value})} className="w-full border p-2 rounded" placeholder="e.g. Summer Sale 50% OFF" /></div>
-                  <div><label className="block text-sm mb-1">Image URL</label><input type="url" required value={bannerFormData.imageUrl} onChange={e => setBannerFormData({...bannerFormData, imageUrl: e.target.value})} className="w-full border p-2 rounded" placeholder="https://..." /></div>
-                  <div className="md:col-span-2"><button type="submit" className="bg-gray-900 text-white px-6 py-2 rounded-md">Save Banner</button></div>
+                  <div>
+                    <label className="block text-sm mb-1">Banner Title</label>
+                    <input type="text" required value={bannerFormData.title} onChange={e => setBannerFormData({...bannerFormData, title: e.target.value})} className="w-full border p-2 rounded" placeholder="e.g. Summer Sale 50% OFF" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Upload Image File (Or use URL)</label>
+                    <input type="file" accept="image/*" onChange={e => setBannerImageFile(e.target.files ? e.target.files[0] : null)} className="w-full border p-1.5 rounded" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm mb-1">Or Image URL</label>
+                    <input type="url" value={bannerFormData.imageUrl} onChange={e => setBannerFormData({...bannerFormData, imageUrl: e.target.value})} className="w-full border p-2 rounded" placeholder="https://..." />
+                  </div>
+                  <div className="md:col-span-2">
+                    <button type="submit" className="bg-gray-900 text-white px-6 py-2 rounded-md">Save Banner</button>
+                  </div>
                 </form>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -710,9 +875,21 @@ export default function AdminPage() {
               </div>
               {isCampaignFormOpen && (
                 <form onSubmit={handleCampaignSubmit} className="bg-white p-6 border rounded-xl flex flex-col gap-4">
-                  <div><label className="block text-sm mb-1">Email Subject</label><input type="text" required value={campaignFormData.subject} onChange={e => setCampaignFormData({...campaignFormData, subject: e.target.value})} className="w-full border p-2 rounded" placeholder="BIG Diwali Sale Starts Now!" /></div>
-                  <div><label className="block text-sm mb-1">Message Body</label><textarea required rows={4} value={campaignFormData.message} onChange={e => setCampaignFormData({...campaignFormData, message: e.target.value})} className="w-full border p-2 rounded" placeholder="Dear user, get 50% off..."></textarea></div>
-                  <div><button type="submit" className="bg-gray-900 text-white px-6 py-2 rounded-md">Send to All Users</button></div>
+                  <div>
+                    <label className="block text-sm mb-1">Email Subject</label>
+                    <input type="text" required value={campaignFormData.subject} onChange={e => setCampaignFormData({...campaignFormData, subject: e.target.value})} className="w-full border p-2 rounded" placeholder="BIG Diwali Sale Starts Now!" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Upload Promotional Image (Optional)</label>
+                    <input type="file" accept="image/*" onChange={e => setCampaignImageFile(e.target.files ? e.target.files[0] : null)} className="w-full border p-1.5 rounded" />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Message Body</label>
+                    <textarea required rows={4} value={campaignFormData.message} onChange={e => setCampaignFormData({...campaignFormData, message: e.target.value})} className="w-full border p-2 rounded" placeholder="Dear user, get 50% off..."></textarea>
+                  </div>
+                  <div>
+                    <button type="submit" className="bg-gray-900 text-white px-6 py-2 rounded-md">Send to All Users</button>
+                  </div>
                 </form>
               )}
               <div className="bg-white border rounded-xl overflow-hidden">

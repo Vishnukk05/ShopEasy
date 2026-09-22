@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/db';
-import { sendOrderStatusEmail } from '../utils/notifications';
+import { sendOrderStatusEmail, transporter } from '../utils/notifications';
 
 export const getUsers = async (req: Request, res: Response) => {
   const users = await prisma.user.findMany({ select: { id: true, name: true, email: true, role: true, createdAt: true } });
@@ -12,13 +12,48 @@ export const deleteUser = async (req: Request, res: Response) => {
   res.json({ success: true });
 };
 
+export const createDeal = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { title, discount, price, originalPrice, endTime } = req.body;
+    const imageUrl = req.file ? `http://localhost:5000/public/uploads/${req.file.filename}` : req.body.imageUrl;
+    
+    if (!imageUrl) return res.status(400).json({ message: 'Image is required' });
+
+    const deal = await prisma.deal.create({
+      data: {
+        title,
+        discount,
+        price: Number(price),
+        originalPrice: originalPrice ? Number(originalPrice) : null,
+        endTime: new Date(endTime),
+        imageUrl
+      }
+    });
+    res.status(201).json(deal);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error creating deal' });
+  }
+};
+
+export const deleteDeal = async (req: Request, res: Response) => {
+  await prisma.deal.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
+};
+
 export const getBanners = async (req: Request, res: Response) => {
   const banners = await prisma.banner.findMany();
   res.json(banners);
 };
 
 export const createBanner = async (req: Request, res: Response) => {
-  const banner = await prisma.banner.create({ data: req.body });
+  const title = req.body.title;
+  const imageUrl = req.file ? `http://localhost:5000/public/uploads/${req.file.filename}` : req.body.imageUrl;
+  
+  if (!imageUrl) {
+    return res.status(400).json({ message: 'Image is required' });
+  }
+
+  const banner = await prisma.banner.create({ data: { title, imageUrl } });
   res.json(banner);
 };
 
@@ -47,10 +82,50 @@ export const getCampaigns = async (req: Request, res: Response) => {
   res.json(campaigns);
 };
 
-export const sendCampaign = async (req: Request, res: Response) => {
-  // In reality, this would send an email. We just log it to DB.
-  const campaign = await prisma.campaign.create({ data: req.body });
-  res.json(campaign);
+export const sendCampaign = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { subject, message } = req.body;
+    let imageUrl = '';
+    
+    if (req.file) {
+      imageUrl = `http://localhost:5000/public/uploads/${req.file.filename}`;
+    }
+
+    const campaign = await prisma.campaign.create({ data: { subject, message } });
+
+    // Fetch all users with emails
+    const users = await prisma.user.findMany({
+      where: { email: { not: null } },
+      select: { email: true }
+    });
+
+    const emails = users.map(u => u.email).filter(Boolean) as string[];
+
+    if (emails.length > 0 && process.env.SMTP_EMAIL) {
+      const htmlBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; line-height: 1.6;">
+          <h2 style="color: #2874f0;">${subject}</h2>
+          ${imageUrl ? `<img src="${imageUrl}" alt="Campaign Image" style="max-width: 100%; border-radius: 8px; margin-bottom: 20px;" />` : ''}
+          <p style="white-space: pre-wrap;">${message}</p>
+          <br/>
+          <p style="font-size: 12px; color: #777;">You are receiving this because you are subscribed to ShopEasy newsletters.</p>
+        </div>
+      `;
+
+      // Send via BCC to avoid exposing emails to everyone
+      await transporter.sendMail({
+        from: `"ShopEasy" <${process.env.SMTP_EMAIL}>`,
+        bcc: emails.join(','),
+        subject,
+        html: htmlBody
+      });
+    }
+
+    res.json(campaign);
+  } catch (error) {
+    console.error('Error sending campaign:', error);
+    res.status(500).json({ message: 'Server error sending campaign' });
+  }
 };
 
 import bcrypt from 'bcryptjs';

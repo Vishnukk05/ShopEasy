@@ -54,44 +54,21 @@ function HomeContent() {
     });
   }, []);
 
-  const heroSlides = [
-    // Dynamic Banners from Admin
-    ...banners.map(b => ({
-      image: b.imageUrl,
-      title: b.title,
-      subtitle: "Exclusive deal available now!",
-      btnText: "Shop Offer",
-      gradient: "linear-gradient(to right, rgba(0,0,0, 0.7) 0%, rgba(0,0,0, 0.4) 100%)",
-      titleColor: "text-white",
-      subColor: "text-gray-200",
-      btnClass: "bg-white text-gray-900 hover:bg-gray-100"
-    })),
-    // Fallback static slides
+  const heroSlides = banners.length > 0 ? banners.map(b => ({
+    image: b.imageUrl,
+    title: b.title,
+    subtitle: "Exclusive deal available now!",
+    btnText: "Shop Offer",
+    gradient: "linear-gradient(to right, rgba(0,0,0, 0.7) 0%, rgba(0,0,0, 0.4) 100%)",
+    titleColor: "text-white",
+    subColor: "text-gray-200",
+    btnClass: "bg-white text-gray-900 hover:bg-gray-100"
+  })) : [
     {
       image: "https://images.unsplash.com/photo-1593640408182-31c70c8268f5?w=1600&q=80",
       title: "Latest Tech Offers.\nUnbeatable Prices Guaranteed.",
       subtitle: "Get the best deals on Apple, Samsung, Sony, and more. 100% Original.",
       btnText: "Shop Electronics",
-      gradient: "linear-gradient(to right, rgba(224, 239, 254, 0.95) 0%, rgba(224, 239, 254, 0.8) 40%, rgba(224, 239, 254, 0.2) 100%)",
-      titleColor: "text-[#1e293b]",
-      subColor: "text-gray-700",
-      btnClass: "bg-blue-600 text-white hover:bg-blue-700"
-    },
-    {
-      image: "https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=1600&q=80",
-      title: "Apple iPhone 15 Pro.\nTitanium Design.",
-      subtitle: "Experience the power of the A17 Pro chip. 100% Original.",
-      btnText: "Buy iPhone",
-      gradient: "linear-gradient(to right, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.7) 50%, rgba(15, 23, 42, 0.2) 100%)",
-      titleColor: "text-white",
-      subColor: "text-gray-300",
-      btnClass: "bg-white text-slate-900 hover:bg-gray-100"
-    },
-    {
-      image: "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=1600&q=80",
-      title: "Samsung Galaxy S24 Ultra.\nGalaxy AI is here.",
-      subtitle: "Experience the ultimate smartphone, with unbeatable features.",
-      btnText: "Shop Samsung",
       gradient: "linear-gradient(to right, rgba(224, 239, 254, 0.95) 0%, rgba(224, 239, 254, 0.8) 40%, rgba(224, 239, 254, 0.2) 100%)",
       titleColor: "text-[#1e293b]",
       subColor: "text-gray-700",

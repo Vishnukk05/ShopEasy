@@ -21,17 +21,20 @@ export const getAddresses = async (req: Request, res: Response): Promise<any> =>
 
 export const createAddress = async (req: Request, res: Response): Promise<any> => {
   try {
-    const headerUserId = req.headers['x-user-id'];
+    const headerUserId = req.headers['x-user-id'] || (req as any).user?.id;
     if (!headerUserId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const { line1, line2, city, state, postalCode, country, isDefault } = req.body;
 
     const address = await prisma.address.create({
       data: {
-        ...req.body,
+        line1, line2, city, state, postalCode, country, isDefault,
         userId: String(headerUserId)
       }
     });
     res.status(201).json(address);
   } catch (error) {
+    console.error('Error creating address:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

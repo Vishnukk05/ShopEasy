@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { Vonage } from '@vonage/server-sdk';
 
-const transporter = nodemailer.createTransport({
+export const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.SMTP_EMAIL,

@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/axios';
 
-function AddressManager({ showToast }: { showToast: (msg: string, type: string) => void }) {
+function AddressManager({ showToast }: { showToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
   const { user, token } = useAuthStore();
   const [addresses, setAddresses] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
