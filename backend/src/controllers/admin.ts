@@ -15,17 +15,17 @@ export const deleteUser = async (req: Request, res: Response) => {
 export const createDeal = async (req: Request, res: Response): Promise<any> => {
   try {
     const { title, discount, price, originalPrice, endTime } = req.body;
-    const imageUrl = req.file ? `http://localhost:5000/public/uploads/${req.file.filename}` : req.body.imageUrl;
+    const imageUrl = req.file ? `http://localhost:5000/public/uploads/${req.file.filename}` : req.body.imageUrl as string;
     
     if (!imageUrl) return res.status(400).json({ message: 'Image is required' });
 
     const deal = await prisma.deal.create({
       data: {
-        title,
-        discount,
+        title: title as string,
+        discount: discount as string,
         price: Number(price),
         originalPrice: originalPrice ? Number(originalPrice) : null,
-        endTime: new Date(endTime),
+        endTime: new Date(endTime as string),
         imageUrl
       }
     });
@@ -36,7 +36,7 @@ export const createDeal = async (req: Request, res: Response): Promise<any> => {
 };
 
 export const deleteDeal = async (req: Request, res: Response) => {
-  await prisma.deal.delete({ where: { id: req.params.id } });
+  await prisma.deal.delete({ where: { id: req.params.id as string } });
   res.json({ success: true });
 };
 
@@ -46,8 +46,8 @@ export const getBanners = async (req: Request, res: Response) => {
 };
 
 export const createBanner = async (req: Request, res: Response) => {
-  const title = req.body.title;
-  const imageUrl = req.file ? `http://localhost:5000/public/uploads/${req.file.filename}` : req.body.imageUrl;
+  const title = req.body.title as string;
+  const imageUrl = req.file ? `http://localhost:5000/public/uploads/${req.file.filename}` : req.body.imageUrl as string;
   
   if (!imageUrl) {
     return res.status(400).json({ message: 'Image is required' });
