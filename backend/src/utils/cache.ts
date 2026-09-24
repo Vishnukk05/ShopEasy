@@ -1,14 +1,14 @@
 import Redis from 'ioredis';
 
-// Allow overriding Redis URL for testing or dev
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const useRedis = process.env.USE_REDIS === 'true';
 
 class CacheService {
   private client: Redis | null = null;
   private isTest = process.env.NODE_ENV === 'test';
 
   constructor() {
-    if (!this.isTest) {
+    if (!this.isTest && useRedis) {
       this.client = new Redis(redisUrl, {
         maxRetriesPerRequest: 1,
         retryStrategy: (times) => {
@@ -18,8 +18,10 @@ class CacheService {
       });
       
       this.client.on('error', (err) => {
-        console.error('Redis cache error:', err);
+        console.error('Redis cache error:', err.message);
       });
+    } else {
+      console.log('Redis cache disabled. Using memory stub.');
     }
   }
 

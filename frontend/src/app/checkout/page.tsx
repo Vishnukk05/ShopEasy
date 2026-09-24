@@ -96,7 +96,7 @@ export default function CheckoutPage() {
       }, { headers: { 'x-user-id': user?.id } });
 
       const payload = {
-        items: items.map(i => ({ productId: i.id, quantity: i.quantity, price: i.price })),
+        items: items.map(i => ({ productId: i.id, variantId: i.variantId || undefined, quantity: i.quantity, price: i.price })),
         totalAmount: getTotalPrice(),
         shippingAddressId: addressRes.data.id,
         paymentId: `PAY-${Date.now()}`
@@ -254,7 +254,7 @@ export default function CheckoutPage() {
               
               <div className="space-y-4 mb-6 max-h-[300px] overflow-y-auto pr-2">
                 {items.map(item => (
-                  <div key={item.id} className="flex justify-between items-start">
+                  <div key={item.cartItemId} className="flex justify-between items-start">
                     <div className="flex gap-3">
                       <div className="w-12 h-12 bg-gray-50 border border-gray-100 rounded flex items-center justify-center shrink-0 overflow-hidden">
                         {item.image ? (

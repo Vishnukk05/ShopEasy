@@ -9,7 +9,7 @@ import { LayoutDashboard, Package, ShoppingCart, Users, Settings, Plus, Edit, Tr
 
 interface Product { id: string; name: string; description: string; price: number; originalPrice: number | null; rating: number | null; stockQuantity: number; categoryId: string; category: { name: string }; images: string[]; }
 interface Category { id: string; name: string; imageUrl?: string; }
-interface User { id: string; name: string; email: string; role: string; createdAt: string; }
+interface User { id: string; name: string; email: string; role: any; createdAt: string; }
 interface Banner { id: string; title: string; imageUrl: string; isActive: boolean; createdAt: string; }
 interface Ticket { id: string; subject: string; message: string; status: string; createdAt: string; }
 interface Campaign { id: string; subject: string; message: string; sentAt: string; }
@@ -750,7 +750,7 @@ export default function AdminPage() {
               <div className="bg-white border rounded-xl overflow-hidden">
                 <table className="w-full text-left text-sm divide-y">
                   <thead><tr className="bg-gray-50 text-xs uppercase text-gray-500"><th className="p-4">Name</th><th className="p-4">Email</th><th className="p-4">Role</th><th className="p-4 text-right">Actions</th></tr></thead>
-                  <tbody className="divide-y">{usersList.map(u => <tr key={u.id} className="hover:bg-gray-50"><td className="p-4 font-medium">{u.name}</td><td className="p-4">{u.email}</td><td className="p-4"><span className={`px-2 py-1 rounded-md text-xs font-semibold ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : u.role === 'STAFF' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{u.role}</span></td><td className="p-4 text-right">{u.role !== 'ADMIN' && <button onClick={() => handleDeleteUser(u.id)} className="text-red-500"><Trash2 size={16}/></button>}</td></tr>)}</tbody>
+                  <tbody className="divide-y">{usersList.map(u => <tr key={u.id} className="hover:bg-gray-50"><td className="p-4 font-medium">{u.name}</td><td className="p-4">{u.email}</td><td className="p-4"><span className={`px-2 py-1 rounded-md text-xs font-semibold ${(u.role?.name || u.role) === 'ADMIN' ? 'bg-purple-100 text-purple-700' : (u.role?.name || u.role) === 'STAFF' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{u.role?.name || u.role}</span></td><td className="p-4 text-right">{(u.role?.name || u.role) !== 'ADMIN' && <button onClick={() => handleDeleteUser(u.id)} className="text-red-500"><Trash2 size={16}/></button>}</td></tr>)}</tbody>
                 </table>
               </div>
             </div>

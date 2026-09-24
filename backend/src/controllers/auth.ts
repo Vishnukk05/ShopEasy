@@ -24,11 +24,11 @@ export const register = async (req: Request, res: Response): Promise<any> => {
     }
 
     if (email) {
-      const existingEmail = await prisma.user.findUnique({ where: { email } });
+      const existingEmail = await prisma.user.findUnique({ include: { role: true }, where: { email } });
       if (existingEmail) return res.status(400).json({ message: 'Email already exists' });
     }
     if (phone) {
-      const existingPhone = await prisma.user.findUnique({ where: { phone } });
+      const existingPhone = await prisma.user.findUnique({ include: { role: true }, where: { phone } });
       if (existingPhone) return res.status(400).json({ message: 'Phone already exists' });
     }
 
@@ -38,7 +38,7 @@ export const register = async (req: Request, res: Response): Promise<any> => {
     const otpCode = generateOTP();
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
-    const user = await prisma.user.create({
+    const user = await prisma.user.create({ include: { role: true },
       data: {
         name,
         email: email || null,
@@ -63,7 +63,7 @@ export const login = async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, phone, password, requestOtp } = req.body;
     
-    const user = await prisma.user.findFirst({
+    const user = await prisma.user.findFirst({ include: { role: true },
       where: {
         OR: [
           email ? { email } : {},
@@ -77,7 +77,7 @@ export const login = async (req: Request, res: Response): Promise<any> => {
     if (requestOtp) {
       const otpCode = generateOTP();
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
-      await prisma.user.update({ where: { id: user.id }, data: { otpCode, otpExpiresAt } });
+      await prisma.user.update({ include: { role: true }, where: { id: user.id }, data: { otpCode, otpExpiresAt } });
       if (email && user.email) await sendEmailOTP(user.email, otpCode);
       if (phone && user.phone) await sendSmsOTP(user.phone, otpCode);
       return res.json({ message: 'OTP sent', userId: user.id });
@@ -95,9 +95,9 @@ export const login = async (req: Request, res: Response): Promise<any> => {
       }
 
       await logAction(user.id, 'LOGIN_SUCCESS', 'AUTH', null, req.ip || 'unknown');
-      const token = generateToken(user.id, user.roleId || 'CUSTOMER');
+      const token = generateToken(user.id, user.role?.name || 'CUSTOMER');
       return res.json({
-        user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.roleId || 'CUSTOMER', isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
+        user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role?.name || 'CUSTOMER', isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
         token,
       });
     }
@@ -112,7 +112,7 @@ export const login = async (req: Request, res: Response): Promise<any> => {
 export const verifyOtp = async (req: Request, res: Response): Promise<any> => {
   try {
     const { userId, otp } = req.body;
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ include: { role: true }, where: { id: userId } });
     
     if (!user) return res.status(400).json({ message: 'User not found' });
     
@@ -120,7 +120,7 @@ export const verifyOtp = async (req: Request, res: Response): Promise<any> => {
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
 
-    await prisma.user.update({
+    await prisma.user.update({ include: { role: true },
       where: { id: user.id },
       data: {
         otpCode: null,
@@ -131,9 +131,9 @@ export const verifyOtp = async (req: Request, res: Response): Promise<any> => {
     });
 
     await logAction(user.id, 'LOGIN_SUCCESS', 'AUTH', null, req.ip || 'unknown');
-      const token = generateToken(user.id, user.roleId || 'CUSTOMER');
+      const token = generateToken(user.id, user.role?.name || 'CUSTOMER');
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.roleId || 'CUSTOMER', isEmailVerified: true },
+      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role?.name || 'CUSTOMER', isEmailVerified: true },
       token,
     });
   } catch (error) {
@@ -146,7 +146,7 @@ export const oauthLogin = async (req: Request, res: Response): Promise<any> => {
   try {
     const { provider, providerId, email, name } = req.body;
     
-    let user = await prisma.user.findFirst({
+    let user = await prisma.user.findFirst({ include: { role: true },
       where: {
         OR: [
           provider === 'google' ? { googleId: providerId } : {},
@@ -158,7 +158,7 @@ export const oauthLogin = async (req: Request, res: Response): Promise<any> => {
 
     if (!user) {
       if (!email || !name) return res.status(400).json({ message: 'Email and name required for new OAuth user' });
-      user = await prisma.user.create({
+      user = await prisma.user.create({ include: { role: true },
         data: {
           name,
           email,
@@ -169,16 +169,16 @@ export const oauthLogin = async (req: Request, res: Response): Promise<any> => {
       });
     } else {
       if (provider === 'google' && !user.googleId) {
-         user = await prisma.user.update({ where: { id: user.id }, data: { googleId: providerId, isEmailVerified: true } });
+         user = await prisma.user.update({ include: { role: true }, where: { id: user.id }, data: { googleId: providerId, isEmailVerified: true } });
       } else if (provider === 'facebook' && !user.facebookId) {
-         user = await prisma.user.update({ where: { id: user.id }, data: { facebookId: providerId, isEmailVerified: true } });
+         user = await prisma.user.update({ include: { role: true }, where: { id: user.id }, data: { facebookId: providerId, isEmailVerified: true } });
       }
     }
 
     await logAction(user.id, 'LOGIN_SUCCESS', 'AUTH', null, req.ip || 'unknown');
-      const token = generateToken(user.id, user.roleId || 'CUSTOMER');
+      const token = generateToken(user.id, user.role?.name || 'CUSTOMER');
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.roleId || 'CUSTOMER', isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
+      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role?.name || 'CUSTOMER', isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
       token,
     });
   } catch (error) {
@@ -192,7 +192,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<any> =
     const userId = (req as any).user.id;
     const { name, email, phone } = req.body;
     
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ include: { role: true }, where: { id: userId } });
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     let isEmailVerified = user.isEmailVerified;
@@ -200,16 +200,16 @@ export const updateProfile = async (req: Request, res: Response): Promise<any> =
 
     if (email !== undefined && email !== user.email) {
       isEmailVerified = false;
-      const existing = await prisma.user.findUnique({ where: { email } });
+      const existing = await prisma.user.findUnique({ include: { role: true }, where: { email } });
       if (existing && existing.id !== userId) return res.status(400).json({ message: 'Email already in use' });
     }
     if (phone !== undefined && phone !== user.phone) {
       isPhoneVerified = false;
-      const existing = await prisma.user.findUnique({ where: { phone } });
+      const existing = await prisma.user.findUnique({ include: { role: true }, where: { phone } });
       if (existing && existing.id !== userId) return res.status(400).json({ message: 'Phone already in use' });
     }
 
-    const updated = await prisma.user.update({
+    const updated = await prisma.user.update({ include: { role: true },
       where: { id: userId },
       data: { 
         name: name !== undefined ? name : user.name,
@@ -233,13 +233,13 @@ export const requestVerification = async (req: Request, res: Response): Promise<
   try {
     const userId = (req as any).user.id;
     const { contactType } = req.body; // 'email' or 'phone'
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ include: { role: true }, where: { id: userId } });
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const otpCode = generateOTP();
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
     
-    await prisma.user.update({ where: { id: user.id }, data: { otpCode, otpExpiresAt } });
+    await prisma.user.update({ include: { role: true }, where: { id: user.id }, data: { otpCode, otpExpiresAt } });
 
     if (contactType === 'email' && user.email) {
       await sendEmailOTP(user.email, otpCode);
@@ -260,14 +260,14 @@ export const verifyContact = async (req: Request, res: Response): Promise<any> =
     const userId = (req as any).user.id;
     const { contactType, otp } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ include: { role: true }, where: { id: userId } });
     if (!user) return res.status(400).json({ message: 'User not found' });
 
     if (user.otpCode !== otp || !user.otpExpiresAt || user.otpExpiresAt < new Date()) {
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
 
-    const updated = await prisma.user.update({
+    const updated = await prisma.user.update({ include: { role: true },
       where: { id: user.id },
       data: {
         otpCode: null,
@@ -290,7 +290,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<any> 
     const { emailOrPhone } = req.body;
     if (!emailOrPhone) return res.status(400).json({ message: 'Email or phone required' });
 
-    const user = await prisma.user.findFirst({
+    const user = await prisma.user.findFirst({ include: { role: true },
       where: {
         OR: [
           { email: emailOrPhone },
@@ -305,7 +305,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<any> 
     const otpExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
     const otpCode = generateOTP();
 
-    await prisma.user.update({ where: { id: user.id }, data: { otpCode, otpExpiresAt } });
+    await prisma.user.update({ include: { role: true }, where: { id: user.id }, data: { otpCode, otpExpiresAt } });
 
     if (isPhone && user.phone) {
       await sendSmsOTP(user.phone, otpCode);
@@ -332,11 +332,11 @@ export const resetPassword = async (req: Request, res: Response): Promise<any> =
     
     if (token) {
       // Email flow
-      user = await prisma.user.findFirst({ where: { otpCode: token } });
+      user = await prisma.user.findFirst({ include: { role: true }, where: { otpCode: token } });
       if (!user) return res.status(404).json({ message: 'Invalid or expired token' });
     } else if (userId && otp) {
       // Phone flow
-      user = await prisma.user.findUnique({ where: { id: userId } });
+      user = await prisma.user.findUnique({ include: { role: true }, where: { id: userId } });
       if (!user) return res.status(404).json({ message: 'User not found' });
       if (user.otpCode !== otp) return res.status(400).json({ message: 'Invalid OTP' });
     } else {
@@ -350,7 +350,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<any> =
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(newPassword, salt);
 
-    await prisma.user.update({
+    await prisma.user.update({ include: { role: true },
       where: { id: user.id },
       data: {
         passwordHash,
@@ -372,14 +372,14 @@ import qrcode from 'qrcode';
 export const generate2FA = async (req: Request, res: Response): Promise<any> => {
   try {
     const userId = (req as any).user.id;
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ include: { role: true }, where: { id: userId } });
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const secret = speakeasy.generateSecret({
       name: `E-commerce (${user.email || user.name})`
     });
 
-    await prisma.user.update({
+    await prisma.user.update({ include: { role: true },
       where: { id: user.id },
       data: { twoFactorSecret: secret.base32 }
     });
@@ -398,7 +398,7 @@ export const verify2FA = async (req: Request, res: Response): Promise<any> => {
     const userId = (req as any).user.id;
     const { token } = req.body;
     
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ include: { role: true }, where: { id: userId } });
     if (!user) return res.status(404).json({ message: 'User not found' });
     if (!user.twoFactorSecret) return res.status(400).json({ message: '2FA not generated' });
 
@@ -412,7 +412,7 @@ export const verify2FA = async (req: Request, res: Response): Promise<any> => {
       return res.status(400).json({ message: 'Invalid 2FA token' });
     }
 
-    await prisma.user.update({
+    await prisma.user.update({ include: { role: true },
       where: { id: user.id },
       data: { isTwoFactorEnabled: true }
     });
@@ -432,7 +432,7 @@ export const loginWith2FA = async (req: Request, res: Response): Promise<any> =>
       return res.status(400).json({ message: 'User ID and TOTP code are required' });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ include: { role: true }, where: { id: userId } });
     if (!user || !user.isTwoFactorEnabled || !user.twoFactorSecret) {
       return res.status(400).json({ message: '2FA is not properly set up for this user' });
     }
@@ -452,9 +452,9 @@ export const loginWith2FA = async (req: Request, res: Response): Promise<any> =>
     }
 
     await logAction(user.id, 'LOGIN_SUCCESS', 'AUTH', null, req.ip || 'unknown');
-      const token = generateToken(user.id, user.roleId || 'CUSTOMER');
+      const token = generateToken(user.id, user.role?.name || 'CUSTOMER');
     return res.json({
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.roleId || 'CUSTOMER' },
+      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role?.name || 'CUSTOMER' },
       token,
     });
   } catch (error) {

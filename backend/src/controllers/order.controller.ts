@@ -10,27 +10,25 @@ export const createOrder = async (req: Request, res: Response): Promise<any> => 
     const order = await prisma.$transaction(async (tx) => {
       // 1. Verify and decrement inventory for each item
       for (const i of items) {
-        const inv = await tx.inventory.findFirst({
-          where: { productId: i.productId, variantId: i.variantId }
-        });
-        
-        if (!inv || inv.quantity < i.quantity) {
-          throw new Error(`Insufficient stock for product ${i.productId}`);
-        }
-
-        await tx.inventory.update({
-          where: { id: inv.id },
-          data: { quantity: { decrement: i.quantity } }
-        });
-
-        await tx.stockMovement.create({
-          data: {
-            inventoryId: inv.id,
-            quantity: -i.quantity,
-            reason: 'Order placed',
-            referenceId: 'PENDING_ORDER'
+        if (i.variantId) {
+          const variant = await tx.productVariant.findUnique({ where: { id: i.variantId } });
+          if (!variant || variant.stockQuantity < i.quantity) {
+            throw new Error(`Insufficient stock for variant ${i.variantId}`);
           }
-        });
+          await tx.productVariant.update({
+            where: { id: i.variantId },
+            data: { stockQuantity: { decrement: i.quantity } }
+          });
+        } else {
+          const prod = await tx.product.findUnique({ where: { id: i.productId } });
+          if (!prod || prod.stockQuantity < i.quantity) {
+            throw new Error(`Insufficient stock for product ${i.productId}`);
+          }
+          await tx.product.update({
+            where: { id: i.productId },
+            data: { stockQuantity: { decrement: i.quantity } }
+          });
+        }
       }
 
       // 2. Create the order
@@ -43,7 +41,7 @@ export const createOrder = async (req: Request, res: Response): Promise<any> => 
           items: {
             create: items.map((i: any) => ({
               productId: i.productId,
-              variantId: i.variantId,
+              variantId: i.variantId || null,
               quantity: i.quantity,
               unitPrice: i.price,
               subtotal: i.price * i.quantity
@@ -64,7 +62,7 @@ export const createOrder = async (req: Request, res: Response): Promise<any> => 
     });
 
     await cache.flushAll();
-      res.status(201).json(order);
+    res.status(201).json(order);
   } catch (error) {
     console.error('Error creating order:', error);
     res.status(500).json({ message: 'Server error creating order', error: String(error) });

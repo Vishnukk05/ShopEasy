@@ -4,7 +4,7 @@ import cache from '../utils/cache';
 
 export const getCategories = async (req: Request, res: Response) => {
   try {
-    const cachedCategories = cache.get('categories_all');
+    const cachedCategories = await cache.get('categories_all');
     if (cachedCategories) {
       return res.json(cachedCategories);
     }
@@ -14,7 +14,7 @@ export const getCategories = async (req: Request, res: Response) => {
       include: { children: true },
     });
     
-    cache.set('categories_all', categories);
+    await cache.set('categories_all', categories);
     res.json(categories);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -27,7 +27,7 @@ export const createCategory = async (req: Request, res: Response): Promise<any> 
     const category = await prisma.category.create({
       data: { name, slug, parentId, imageUrl },
     });
-    cache.flushAll();
+    await cache.flushAll();
     res.status(201).json(category);
   } catch (error: any) {
     console.error('Create Category Error:', error);
@@ -46,7 +46,7 @@ export const updateCategory = async (req: Request, res: Response): Promise<any> 
       where: { id },
       data: { name, slug, parentId, imageUrl },
     });
-    cache.flushAll();
+    await cache.flushAll();
     res.json(category);
   } catch (error: any) {
     console.error('Update Category Error:', error);
@@ -61,11 +61,10 @@ export const deleteCategory = async (req: Request, res: Response): Promise<any> 
   try {
     const id = String(req.params.id);
     await prisma.category.delete({ where: { id } });
-    cache.flushAll();
+    await cache.flushAll();
     res.json({ message: 'Deleted' });
   } catch (error) {
     console.error('Delete Category Error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
-

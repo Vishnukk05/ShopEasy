@@ -3,16 +3,33 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding database...');
+  console.log('Seeding database with advanced mock data...');
   
-  // Clean up existing data to prevent duplicates on rerun
+  // Clean up existing data to prevent duplicates
+  await prisma.reviewImage.deleteMany();
+  await prisma.review.deleteMany();
   await prisma.orderItem.deleteMany();
+  await prisma.orderStatusHistory.deleteMany();
   await prisma.order.deleteMany();
   await prisma.cartItem.deleteMany();
   await prisma.cart.deleteMany();
+  await prisma.productVariant.deleteMany();
+  await prisma.inventory.deleteMany();
+  await prisma.stockMovement.deleteMany();
   await prisma.product.deleteMany();
   await prisma.category.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.userRole.deleteMany();
+  await prisma.permission.deleteMany();
+
+  // Create roles
+  const adminRole = await prisma.userRole.create({
+    data: { name: 'ADMIN', description: 'Super Administrator' }
+  });
+  
+  const customerRole = await prisma.userRole.create({
+    data: { name: 'CUSTOMER', description: 'Standard Customer' }
+  });
 
   // Create an Admin user
   const bcrypt = require('bcryptjs');
@@ -24,10 +41,11 @@ async function main() {
       name: 'Admin User',
       email: 'admin@example.com',
       passwordHash,
-      role: 'ADMIN',
+      roleId: adminRole.id,
     }
   });
 
+  // Create Categories
   const electronics = await prisma.category.create({
     data: { name: 'Electronics', slug: 'electronics' },
   });
@@ -36,45 +54,71 @@ async function main() {
     data: { name: 'Clothing', slug: 'clothing' },
   });
 
-  await prisma.product.createMany({
+  // Create Products
+  const p1 = await prisma.product.create({
+    data: {
+      name: 'Apple iPhone 15 Pro Max (256GB)',
+      slug: 'apple-iphone-15-pro-max',
+      description: 'Titanium design. A17 Pro chip. 48MP main camera. USB-C.',
+      price: 1599.00,
+      stockQuantity: 50,
+      categoryId: electronics.id,
+      images: ["https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=300&h=300&fit=crop"],
+    },
+  });
+
+  const p2 = await prisma.product.create({
+    data: {
+      name: 'Sony WH-1000XM5 ANC Headphones',
+      slug: 'sony-wh-1000xm5',
+      description: 'Industry-leading noise cancellation. 30 hours battery life.',
+      price: 299.99,
+      stockQuantity: 100,
+      categoryId: electronics.id,
+      images: ["https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?w=300&h=300&fit=crop"],
+    },
+  });
+
+  const p3 = await prisma.product.create({
+    data: {
+      name: 'Premium Cotton T-Shirt',
+      slug: 'premium-cotton-t-shirt',
+      description: '100% organic cotton. Super soft and breathable.',
+      price: 29.99,
+      stockQuantity: 0, // Variants have their own stock
+      categoryId: clothing.id,
+      images: ["https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=300&h=300&fit=crop"],
+    },
+  });
+
+  // Add Variants to clothing
+  await prisma.productVariant.createMany({
     data: [
       {
-        name: 'Apple iPhone 15 Pro Max (256GB)',
-        slug: 'apple-iphone-15-pro-max',
-        description: 'Titanium design. A17 Pro chip. 48MP main camera. USB-C.',
-        price: 1599.00,
-        stockQuantity: 50,
-        categoryId: electronics.id,
-        images: ["https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=300&h=300&fit=crop"],
+        productId: p3.id,
+        sku: 'TSHIRT-BLK-S',
+        name: 'Black - Small',
+        price: 29.99,
+        stockQuantity: 20,
+        attributes: { size: 'S', color: 'Black' }
       },
       {
-        name: 'Samsung Galaxy S24 Ultra 5G',
-        slug: 'samsung-galaxy-s24-ultra',
-        description: 'Galaxy AI is here. 200MP camera, Snapdragon 8 Gen 3.',
-        price: 1299.00,
-        stockQuantity: 40,
-        categoryId: electronics.id,
-        images: ["https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=300&h=300&fit=crop"],
+        productId: p3.id,
+        sku: 'TSHIRT-BLK-M',
+        name: 'Black - Medium',
+        price: 29.99,
+        stockQuantity: 15,
+        attributes: { size: 'M', color: 'Black' }
       },
       {
-        name: 'Sony WH-1000XM5 ANC Headphones',
-        slug: 'sony-wh-1000xm5',
-        description: 'Industry-leading noise cancellation. 30 hours battery life.',
-        price: 299.99,
-        stockQuantity: 100,
-        categoryId: electronics.id,
-        images: ["https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?w=300&h=300&fit=crop"],
-      },
-      {
-        name: 'Apple MacBook Air M3 (8GB/256GB)',
-        slug: 'apple-macbook-air-m3',
-        description: 'Supercharged by M3. 13.6-inch Liquid Retina display.',
-        price: 1149.00,
-        stockQuantity: 35,
-        categoryId: electronics.id,
-        images: ["https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=300&h=300&fit=crop"],
-      },
-    ],
+        productId: p3.id,
+        sku: 'TSHIRT-BLK-L',
+        name: 'Black - Large',
+        price: 34.99, // L costs more
+        stockQuantity: 5,
+        attributes: { size: 'L', color: 'Black' }
+      }
+    ]
   });
 
   console.log('Database seeded successfully!');
@@ -88,4 +132,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-
