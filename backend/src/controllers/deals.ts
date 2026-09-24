@@ -4,7 +4,7 @@ import cache from '../utils/cache';
 
 export const getDeals = async (req: Request, res: Response) => {
   try {
-    const cachedDeals = cache.get('deals_all');
+    const cachedDeals = await cache.get('deals_all');
     if (cachedDeals) {
       return res.json(cachedDeals);
     }
@@ -13,7 +13,7 @@ export const getDeals = async (req: Request, res: Response) => {
       orderBy: { endTime: 'asc' }
     });
     
-    cache.set('deals_all', deals);
+    await cache.set('deals_all', deals);
     res.json(deals);
   } catch (error) {
     res.status(500).json({ message: 'Server error fetching deals' });
