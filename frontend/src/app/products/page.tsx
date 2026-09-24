@@ -1,7 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useSearchParams } from 'next/navigation';
 import api from '@/lib/axios';
 import { useCartStore } from '@/store/useCartStore';
 import { useWishlistStore } from '@/store/useWishlistStore';
@@ -23,6 +24,8 @@ interface Category {
 }
 
 export default function ProductsPage() {
+  const searchParams = useSearchParams();
+  const searchStr = searchParams?.get('search') || '';
   const addItem = useCartStore((state) => state.addItem);
   const addToWishlist = useWishlistStore((state) => state.addItem);
   const removeFromWishlist = useWishlistStore((state) => state.removeItem);
@@ -49,7 +52,7 @@ export default function ProductsPage() {
       try {
         setError(null);
         const [prodRes, catRes] = await Promise.all([
-          api.get('/products'),
+          api.get('/products', { params: { search: searchStr || undefined } }),
           api.get('/categories')
         ]);
         setAllProducts(prodRes.data);

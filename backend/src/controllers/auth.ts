@@ -1,13 +1,17 @@
-import { Request, Response } from 'express';
+﻿import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import prisma from '../utils/db';
+import { logAction } from '../utils/audit';
 import { generateOTP, sendEmailOTP, sendSmsOTP, sendResetPasswordWithOTP } from '../utils/notifications';
 
 const generateToken = (userId: string, role: string) => {
-  return jwt.sign({ id: userId, role }, process.env.JWT_SECRET || 'secret', {
-    expiresIn: '1h',
+  if (!process.env.JWT_SECRET) {
+    throw new Error('CRITICAL: JWT_SECRET environment variable is missing.');
+  }
+  return jwt.sign({ id: userId, role }, (process.env.JWT_SECRET as string), {
+    expiresIn: (process.env.JWT_EXPIRES_IN || '1h') as any,
   });
 };
 
@@ -82,10 +86,18 @@ export const login = async (req: Request, res: Response): Promise<any> => {
     if (password && user.passwordHash) {
       const isMatch = await bcrypt.compare(password, user.passwordHash);
       if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
-      
-      const token = generateToken(user.id, user.role);
+      if (user.isTwoFactorEnabled) {
+        return res.status(401).json({
+          require2FA: true,
+          userId: user.id,
+          message: '2FA required'
+        });
+      }
+
+      await logAction(user.id, 'LOGIN_SUCCESS', 'AUTH', null, req.ip || 'unknown');
+      const token = generateToken(user.id, user.roleId || 'CUSTOMER');
       return res.json({
-        user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role, isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
+        user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.roleId || 'CUSTOMER', isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
         token,
       });
     }
@@ -118,9 +130,10 @@ export const verifyOtp = async (req: Request, res: Response): Promise<any> => {
       }
     });
 
-    const token = generateToken(user.id, user.role);
+    await logAction(user.id, 'LOGIN_SUCCESS', 'AUTH', null, req.ip || 'unknown');
+      const token = generateToken(user.id, user.roleId || 'CUSTOMER');
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role, isEmailVerified: true },
+      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.roleId || 'CUSTOMER', isEmailVerified: true },
       token,
     });
   } catch (error) {
@@ -162,9 +175,10 @@ export const oauthLogin = async (req: Request, res: Response): Promise<any> => {
       }
     }
 
-    const token = generateToken(user.id, user.role);
+    await logAction(user.id, 'LOGIN_SUCCESS', 'AUTH', null, req.ip || 'unknown');
+      const token = generateToken(user.id, user.roleId || 'CUSTOMER');
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role, isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
+      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.roleId || 'CUSTOMER', isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
       token,
     });
   } catch (error) {
@@ -207,7 +221,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<any> =
     });
 
     res.json({
-      user: { id: updated.id, name: updated.name, email: updated.email, phone: updated.phone, role: updated.role, isEmailVerified: updated.isEmailVerified, isPhoneVerified: updated.isPhoneVerified }
+      user: { id: updated.id, name: updated.name, email: updated.email, phone: updated.phone, roleId: updated.roleId, isEmailVerified: updated.isEmailVerified, isPhoneVerified: updated.isPhoneVerified }
     });
   } catch (error) {
     console.error(error);
@@ -264,7 +278,7 @@ export const verifyContact = async (req: Request, res: Response): Promise<any> =
     });
 
     res.json({
-      user: { id: updated.id, name: updated.name, email: updated.email, phone: updated.phone, role: updated.role, isEmailVerified: updated.isEmailVerified, isPhoneVerified: updated.isPhoneVerified }
+      user: { id: updated.id, name: updated.name, email: updated.email, phone: updated.phone, roleId: updated.roleId, isEmailVerified: updated.isEmailVerified, isPhoneVerified: updated.isPhoneVerified }
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error verifying contact' });
@@ -349,5 +363,102 @@ export const resetPassword = async (req: Request, res: Response): Promise<any> =
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error resetting password' });
+  }
+};
+
+import speakeasy from 'speakeasy';
+import qrcode from 'qrcode';
+
+export const generate2FA = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const userId = (req as any).user.id;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const secret = speakeasy.generateSecret({
+      name: `E-commerce (${user.email || user.name})`
+    });
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { twoFactorSecret: secret.base32 }
+    });
+
+    const qrCodeUrl = await qrcode.toDataURL(secret.otpauth_url!);
+
+    res.json({ secret: secret.base32, qrCode: qrCodeUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error generating 2FA' });
+  }
+};
+
+export const verify2FA = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const userId = (req as any).user.id;
+    const { token } = req.body;
+    
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user.twoFactorSecret) return res.status(400).json({ message: '2FA not generated' });
+
+    const verified = speakeasy.totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: 'base32',
+      token
+    });
+
+    if (!verified) {
+      return res.status(400).json({ message: 'Invalid 2FA token' });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { isTwoFactorEnabled: true }
+    });
+
+    res.json({ message: '2FA enabled successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error verifying 2FA' });
+  }
+};
+
+export const loginWith2FA = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { userId, totpCode } = req.body;
+    
+    if (!userId || !totpCode) {
+      return res.status(400).json({ message: 'User ID and TOTP code are required' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isTwoFactorEnabled || !user.twoFactorSecret) {
+      return res.status(400).json({ message: '2FA is not properly set up for this user' });
+    }
+
+    // Lazy load speakeasy so we don't break if it's not installed yet
+    const speakeasy = require('speakeasy');
+    const isValid = speakeasy.totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: 'base32',
+      token: totpCode,
+      window: 1
+    });
+
+    if (!isValid) {
+      await logAction(user.id, '2FA_LOGIN_FAILED', 'AUTH', null, req.ip || 'unknown');
+      return res.status(401).json({ message: 'Invalid TOTP code' });
+    }
+
+    await logAction(user.id, 'LOGIN_SUCCESS', 'AUTH', null, req.ip || 'unknown');
+      const token = generateToken(user.id, user.roleId || 'CUSTOMER');
+    return res.json({
+      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.roleId || 'CUSTOMER' },
+      token,
+    });
+  } catch (error) {
+    console.error('loginWith2FA error:', error);
+    res.status(500).json({ message: 'Server error during 2FA login' });
   }
 };

@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { createOrder, getUserOrders } from '../controllers/order';
-import { authenticateJWT } from '../middlewares/authMiddleware';
+import { createOrder, getUserOrders, getAllOrders, updateOrderStatus } from '../controllers/order.controller';
+import { authenticateJWT, requireAdmin } from '../middlewares/authMiddleware';
 
 const router = Router();
 
 router.post('/', authenticateJWT, createOrder);
-router.get('/', authenticateJWT, getUserOrders);
+router.get('/my-orders', authenticateJWT, getUserOrders);
+router.get('/', authenticateJWT, requireAdmin, getAllOrders);
+router.patch('/:id/status', authenticateJWT, requireAdmin, updateOrderStatus);
 
 export default router;
-

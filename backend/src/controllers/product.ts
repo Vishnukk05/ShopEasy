@@ -4,29 +4,37 @@ import cache from '../utils/cache';
 
 export const getProducts = async (req: Request, res: Response) => {
   try {
-    const { category, search } = req.query;
-    const cacheKey = `products_${category || 'all'}_${search || 'all'}`;
-    const cachedProducts = cache.get(cacheKey);
+    const { category, search, minPrice, maxPrice } = req.query;
+    const cacheKey = `products_${category || 'all'}_${search || 'all'}_${minPrice || '0'}_${maxPrice || 'inf'}`;
+    const cachedProducts = await cache.get(cacheKey);
 
     if (cachedProducts) {
       return res.json(cachedProducts);
     }
     
+    const searchString = search ? String(search).split(' ').join(' | ') : undefined;
+    
     const products = await prisma.product.findMany({
       where: {
         isActive: true,
         ...(category ? { categoryId: String(category) } : {}),
-        ...(search ? {
+        ...(searchString ? {
           OR: [
-            { name: { contains: String(search), mode: 'insensitive' } },
-            { description: { contains: String(search), mode: 'insensitive' } },
+            { name: { search: searchString } },
+            { description: { search: searchString } },
           ],
+        } : {}),
+        ...(minPrice || maxPrice ? {
+          price: {
+            ...(minPrice ? { gte: Number(minPrice) } : {}),
+            ...(maxPrice ? { lte: Number(maxPrice) } : {}),
+          }
         } : {}),
       },
       include: { category: true },
     });
     
-    cache.set(cacheKey, products);
+    await cache.set(cacheKey, products);
     res.json(products);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -38,7 +46,14 @@ export const getProductById = async (req: Request, res: Response): Promise<any> 
     const { id } = req.params;
     const product = await prisma.product.findUnique({
       where: { id: String(id) },
-      include: { category: true },
+      include: { 
+        category: true,
+        variants: {
+          include: {
+            inventory: true
+          }
+        }
+      },
     });
     
     if (!product) return res.status(404).json({ message: 'Product not found' });
@@ -64,7 +79,7 @@ export const createProduct = async (req: Request, res: Response) => {
         images,
       },
     });
-    cache.flushAll();
+    await cache.flushAll();
     res.status(201).json(product);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -89,7 +104,7 @@ export const updateProduct = async (req: Request, res: Response) => {
         images,
       },
     });
-    cache.flushAll();
+    await cache.flushAll();
     res.json(product);
   } catch (error: any) {
     console.error('Update Product Error:', error);
@@ -107,7 +122,7 @@ export const deleteProduct = async (req: Request, res: Response): Promise<any> =
     await prisma.product.delete({
       where: { id: String(id) }
     });
-    cache.flushAll();
+    await cache.flushAll();
     res.json({ message: 'Product deleted successfully' });
   } catch (error) {
     console.error(error);
@@ -187,7 +202,7 @@ export const createProductsBulk = async (req: Request, res: Response) => {
     }
     
     if (successCount > 0) {
-      cache.flushAll();
+      await cache.flushAll();
     }
     
     return res.status(200).json({ message: 'Imported ' + successCount + ' products successfully.', errors });

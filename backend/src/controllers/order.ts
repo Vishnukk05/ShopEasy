@@ -11,8 +11,7 @@ export const createOrder = async (req: Request, res: Response): Promise<any> => 
         userId,
         totalAmount,
         shippingAddressId,
-        paymentId,
-        items: {
+                items: {
           create: items.map((i: any) => ({
             productId: i.productId,
             quantity: i.quantity,

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { ShoppingCart, Star, RotateCcw, Truck, ShieldCheck, Heart, CheckCircle2 } from 'lucide-react';
@@ -8,6 +8,14 @@ import { useCartStore } from '@/store/useCartStore';
 import { useWishlistStore } from '@/store/useWishlistStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import Link from 'next/link';
+
+interface ProductVariant {
+  id: string;
+  name: string | null;
+  price: string;
+  attributes: Record<string, string>;
+  inventory?: { quantity: number };
+}
 
 interface Product {
   id: string;
@@ -19,6 +27,7 @@ interface Product {
   stockQuantity: number;
   category: { name: string };
   images?: string[];
+  variants?: ProductVariant[];
 }
 
 export default function ProductDetailsPage() {
@@ -35,6 +44,9 @@ export default function ProductDetailsPage() {
   const [quantity, setQuantity] = useState(1);
   const [showToast, setShowToast] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  
   const { user, openAuthModal } = useAuthStore();
 
   useEffect(() => {
@@ -51,6 +63,37 @@ export default function ProductDetailsPage() {
     if (params.id) fetchProduct();
   }, [params.id]);
 
+  // Derived state for variants
+  const activeVariant = useMemo(() => {
+    if (!product?.variants?.length) return null;
+    return product.variants.find(v => {
+      if (!v.attributes) return false;
+      return Object.entries(selectedOptions).every(([key, val]) => v.attributes[key] === val);
+    });
+  }, [product, selectedOptions]);
+
+  const availableAttributes = useMemo(() => {
+    if (!product?.variants?.length) return {};
+    const attrs: Record<string, Set<string>> = {};
+    product.variants.forEach(v => {
+      if (v.attributes) {
+        Object.entries(v.attributes).forEach(([k, val]) => {
+          if (!attrs[k]) attrs[k] = new Set();
+          attrs[k].add(val as string);
+        });
+      }
+    });
+    return attrs;
+  }, [product]);
+
+  // Select default variants on load
+  useEffect(() => {
+    if (product?.variants?.length && Object.keys(selectedOptions).length === 0) {
+      const firstVariantAttrs = product.variants[0].attributes || {};
+      setSelectedOptions(firstVariantAttrs);
+    }
+  }, [product]);
+
   const handleAddToCart = () => {
     if (!user) {
       openAuthModal('login');
@@ -58,8 +101,10 @@ export default function ProductDetailsPage() {
     }
 
     if (product) {
+      const variantId = activeVariant?.id;
+      const price = activeVariant ? parseFloat(activeVariant.price) : parseFloat(product.price);
       for (let i = 0; i < quantity; i++) {
-        addItem({ id: product.id, name: product.name, price: parseFloat(product.price) });
+        addItem({ id: product.id, variantId, name: product.name, price });
       }
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
@@ -83,8 +128,11 @@ export default function ProductDetailsPage() {
     );
   }
 
-  const discountPct = product.originalPrice && parseFloat(product.originalPrice) > parseFloat(product.price)
-    ? Math.round(((parseFloat(product.originalPrice) - parseFloat(product.price)) / parseFloat(product.originalPrice)) * 100)
+  const currentPrice = activeVariant ? parseFloat(activeVariant.price) : parseFloat(product.price);
+  const currentStock = activeVariant?.inventory?.quantity ?? product.stockQuantity;
+
+  const discountPct = product.originalPrice && parseFloat(product.originalPrice) > currentPrice
+    ? Math.round(((parseFloat(product.originalPrice) - currentPrice) / parseFloat(product.originalPrice)) * 100)
     : 0;
 
   const ratingVal = product.rating || 0;
@@ -93,7 +141,6 @@ export default function ProductDetailsPage() {
   return (
     <div className="bg-white min-h-screen py-8 font-sans">
       <div className="max-w-[1200px] mx-auto px-4 md:px-8">
-        
         {/* Breadcrumb */}
         <div className="text-sm text-gray-500 mb-8 flex items-center gap-2">
           <Link href="/" className="hover:text-blue-600">Home</Link>
@@ -131,7 +178,7 @@ export default function ProductDetailsPage() {
                     if (isInWishlist(product.id)) {
                       removeFromWishlist(product.id);
                     } else {
-                      addToWishlist({ id: product.id, name: product.name, price: parseFloat(product.price), image: product.images?.[0] });
+                      addToWishlist({ id: product.id, name: product.name, price: currentPrice, image: product.images?.[0] });
                     }
                   }
                 }}
@@ -161,37 +208,50 @@ export default function ProductDetailsPage() {
             </div>
 
             <div className="flex items-center gap-4 mb-6">
-              <span className="text-3xl font-bold text-gray-900">${product.price}</span>
+              <span className="text-3xl font-bold text-gray-900">${currentPrice}</span>
               {product.originalPrice && <span className="text-xl text-gray-400 line-through">${product.originalPrice}</span>}
               {discountPct > 0 && <span className="bg-red-100 text-red-700 text-sm font-bold px-3 py-1 rounded-full">{discountPct}% OFF</span>}
             </div>
+            
+            <div className="mb-4">
+               <span className={`text-sm font-semibold ${currentStock > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                 {currentStock > 0 ? `${currentStock} in stock` : 'Out of Stock'}
+               </span>
+            </div>
+
+            {Object.keys(availableAttributes).map((attrKey) => (
+              <div key={attrKey} className="mb-6">
+                <h3 className="font-semibold text-gray-900 mb-3 capitalize">{attrKey}</h3>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(availableAttributes[attrKey]).map(val => (
+                    <button
+                      key={val}
+                      onClick={() => setSelectedOptions({ ...selectedOptions, [attrKey]: val })}
+                      className={`px-4 py-2 border rounded-md ${selectedOptions[attrKey] === val ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-700 hover:border-gray-300'}`}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
 
             <p className="text-gray-600 mb-8 leading-relaxed whitespace-pre-wrap">
               {product.description}
             </p>
-
-            <div className="mb-8">
-              <h3 className="font-semibold text-gray-900 mb-4">Key Features:</h3>
-              <ul className="list-disc pl-5 space-y-2 text-gray-600">
-                <li>Active Noise Cancellation</li>
-                <li>35 Hours Battery Life</li>
-                <li>Bluetooth 5.2</li>
-                <li>Lightweight & Comfortable</li>
-                <li>Built-in Microphone</li>
-              </ul>
-            </div>
 
             {/* Actions */}
             <div className="flex items-center gap-6 mb-8 border-t border-b border-gray-100 py-8">
               <div className="flex items-center border border-gray-300 rounded-md">
                 <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="px-4 py-3 text-gray-600 hover:bg-gray-50">-</button>
                 <span className="px-4 font-semibold w-12 text-center">{quantity}</span>
-                <button onClick={() => setQuantity(quantity + 1)} className="px-4 py-3 text-gray-600 hover:bg-gray-50">+</button>
+                <button onClick={() => setQuantity(quantity + 1)} className="px-4 py-3 text-gray-600 hover:bg-gray-50" disabled={quantity >= currentStock}>+</button>
               </div>
               
               <button 
                 onClick={handleAddToCart}
-                className="flex-1 bg-blue-600 text-white py-3.5 px-6 font-bold rounded-md shadow-sm hover:bg-blue-700 transition-colors"
+                disabled={currentStock <= 0}
+                className="flex-1 bg-blue-600 text-white py-3.5 px-6 font-bold rounded-md shadow-sm hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
                 Add to Cart
               </button>
@@ -205,17 +265,11 @@ export default function ProductDetailsPage() {
                   handleAddToCart(); 
                   router.push('/cart'); 
                 }}
-                className="flex-1 bg-gray-900 text-white py-3.5 px-6 font-bold rounded-md shadow-sm hover:bg-black transition-colors"
+                disabled={currentStock <= 0}
+                className="flex-1 bg-gray-900 text-white py-3.5 px-6 font-bold rounded-md shadow-sm hover:bg-black transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
                 Buy Now
               </button>
-            </div>
-
-            {/* Trust Badges */}
-            <div className="flex items-center justify-between text-sm text-gray-600">
-              <div className="flex items-center gap-2"><Truck size={18} /> Free Shipping</div>
-              <div className="flex items-center gap-2"><RotateCcw size={18} /> 7 Days Return</div>
-              <div className="flex items-center gap-2"><ShieldCheck size={18} /> 1 Year Warranty</div>
             </div>
           </div>
         </div>
